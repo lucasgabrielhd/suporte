@@ -26,6 +26,11 @@ atendente digita ─▶ painel ─▶ fila no Postgres ─▶ app busca em wa-su
 - **Áudio:** acha o `.opus` que o WhatsApp baixou, transcreve na Groq (`whisper-large-v3-turbo`, igual ao WA Bridge) e manda o áudio pro painel pra ouvir.
 - **Foto:** manda a foto (reduzida pra 1280px) pro painel.
 - **CRM:** do lado do chat aparece a ficha da cliente puxada de `public.clientes` / `public.pedidos` pelo número (pedidos, status, rastreio, itens). Só leitura, não escreve nada no CRM.
+- **Rastreio em 1 clique:** botão "📦 Enviar rastreio" no pedido monta a mensagem (código, link, última atualização, previsão, aviso de Mini Envios) usando a resposta rápida `/rastreio`. Sem rastreio ainda: "📋 Enviar status" (`/status`).
+- **Rastreio ao vivo:** o card consulta a Frenet (`tracking/trackinginfo`, credencial *Frenet Face Clean*) e mostra o último evento + histórico. Cache de 20 min no Postgres.
+- **Respostas rápidas no banco** (`suporte.respostas`), compartilhadas entre atendentes, com variáveis `{nome}` `{atendente}` `{pedido}` `{rastreio}` `{link_rastreio}` `{ultima_atualizacao}` `{previsao}` `{status}` `{valor}` `{produtos}` `{transportadora}` `{aviso_envio}`. Linha com variável vazia some.
+- **Esperando resposta:** cronômetro em cada conversa (laranja ≥5 min, vermelho ≥15 min), aba "Esperando" (mais antiga primeiro) e contador no topo.
+- **Notificação do Windows** quando chega mensagem com o painel minimizado (o navegador pede permissão no primeiro clique).
 - **7 dias:** mensagens, fotos e áudios com mais de 7 dias são apagados de hora em hora.
 - **Nunca manda 2x:** cada resposta tem um id; o app guarda os ids já enviados.
 

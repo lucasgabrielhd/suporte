@@ -20,8 +20,8 @@
       "webhookId": "601a1db6-a0cd-46fc-ac45-2cbaeaa8bd69",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "",
-          "name": "WA Suporte App"
+          "id": "YDHlr4APY27Ew5l7",
+          "name": "X-WS-Token"
         }
       }
     },
@@ -44,8 +44,8 @@
       "webhookId": "c88b4c4e-5f3a-4ee7-9639-65ab5fb4e8ec",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "",
-          "name": "WA Suporte App"
+          "id": "YDHlr4APY27Ew5l7",
+          "name": "X-WS-Token"
         }
       }
     },
@@ -113,7 +113,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        740,
+        1660,
         200
       ]
     },
@@ -161,8 +161,8 @@
     },
     {
       "parameters": {
-        "content": "## WA Suporte FC\nApp do celular do suporte ⇄ painel HTML.\n\n- **wa-suporte-in**: app manda mensagens da cliente e confirmações de envio (credencial Header Auth *WA Suporte App*, header `X-WS-Token`)\n- **wa-suporte-out**: app busca o que a atendente digitou (mesma credencial)\n- **wa-suporte-painel**: painel (token conferido no Postgres, tabela `suporte.config`)\n\nToda a regra está nas funções do schema `suporte` (arquivo `n8n/suporte.sql` do repo). Mensagens, fotos e áudios somem com 7 dias.",
-        "height": 300,
+        "content": "## WA Suporte FC\nApp do celular do suporte ⇄ painel HTML.\n\n- **wa-suporte-in**: app manda mensagens da cliente e confirmações de envio (credencial Header Auth *WA Suporte App*, header `X-WS-Token`)\n- **wa-suporte-out**: app busca o que a atendente digitou (mesma credencial)\n- **wa-suporte-painel**: painel (token conferido no Postgres, tabela `suporte.config`)\n\nToda a regra está nas funções do schema `suporte` (arquivo `n8n/suporte.sql` do repo). Mensagens, fotos e áudios somem com 7 dias.\n\n**Rastreio ao vivo:** quando o painel pede `rastreio`, o Postgres devolve o que consultar → Frenet (credencial *Frenet Face Clean*) → salva no cache (20 min) → responde.",
+        "height": 380,
         "width": 420
       },
       "id": "045a6928-29de-4ea8-838a-b0f6b7251235",
@@ -173,6 +173,108 @@
         -20,
         -360
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0c8a430d-c06d-4719-8802-422b39e9b0b9",
+              "leftValue": "={{ !!($json.r && $json.r.consulta) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "32e038f4-fe17-47ed-812d-ffa58cbeb602",
+      "name": "Consulta Frenet?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        740,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.frenet.com.br/tracking/trackinginfo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.r.consulta) }}",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "b8746075-4c35-48b3-81b0-91387e85a578",
+      "name": "Frenet rastreio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        60
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "N1PYeH534gvjLZrk",
+          "name": "Frenet Face Clean"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const alvo = $('Postgres suporte.api').first().json.r || {};\nconst resp = $input.first().json || {};\nconst toIso = (s) => {\n  const t = String(s || '').trim();\n  const m = t.match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})[ T]?(\\d{2}:\\d{2}(?::\\d{2})?)?/);\n  if (m) return `${m[3]}-${m[2]}-${m[1]}T${m[4] || '00:00'}-03:00`;\n  return t;\n};\nconst lista = Array.isArray(resp.TrackingEvents) ? resp.TrackingEvents : [];\nconst eventos = lista.map(e => ({\n  quando: toIso(e.EventDateTime),\n  local: e.EventLocation || '',\n  descricao: e.EventDescription || '',\n  tipo: e.EventType || ''\n})).sort((a, b) => (Date.parse(b.quando) || 0) - (Date.parse(a.quando) || 0)).slice(0, 20);\nlet erro = resp.ErrorMessage || '';\nif (!erro && resp.error) erro = resp.error.message || String(resp.error);\nif (!erro && !eventos.length) erro = 'sem_eventos';\nconst dados = { ok: eventos.length > 0, erro, url: resp.TrackingUrl || '', servico: resp.ServiceDescrition || '', eventos };\nconst json = JSON.stringify({ rota: 'rastreio_salvar', token: '', body: { codigo: alvo.codigo, dados } });\nconst b64 = typeof Buffer !== 'undefined'\n  ? Buffer.from(json, 'utf8').toString('base64')\n  : btoa(unescape(encodeURIComponent(json)));\nreturn [{ json: { sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];"
+      },
+      "id": "5c8b544d-93d6-4eda-9105-4af8f795efaa",
+      "name": "Monta SQL rastreio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "447d46c8-c609-4995-b9ea-1f06cb2d6210",
+      "name": "Salva rastreio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1420,
+        60
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XLnzyJR4A4LD14G6",
+          "name": "CRM Postgres"
+        }
+      }
     }
   ],
   "connections": {
@@ -224,7 +326,7 @@
       "main": [
         [
           {
-            "node": "Responde",
+            "node": "Consulta Frenet?",
             "type": "main",
             "index": 0
           }
@@ -236,6 +338,57 @@
         [
           {
             "node": "Apaga mais de 7 dias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consulta Frenet?": {
+      "main": [
+        [
+          {
+            "node": "Frenet rastreio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responde",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frenet rastreio": {
+      "main": [
+        [
+          {
+            "node": "Monta SQL rastreio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta SQL rastreio": {
+      "main": [
+        [
+          {
+            "node": "Salva rastreio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salva rastreio": {
+      "main": [
+        [
+          {
+            "node": "Responde",
             "type": "main",
             "index": 0
           }

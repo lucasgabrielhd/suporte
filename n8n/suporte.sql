@@ -56,6 +56,32 @@ create table if not exists suporte.config (
   valor text not null
 );
 
+create table if not exists suporte.respostas (
+  id bigserial primary key,
+  atalho text not null unique,
+  texto text not null,
+  ordem int not null default 100,
+  atualizado_em timestamptz not null default now()
+);
+
+insert into suporte.respostas (atalho, texto, ordem)
+select v.atalho, v.texto, v.ordem
+  from (values
+    ('oi', 'Oi, {nome}! Aqui é {atendente}, do suporte da Face Clean 💙 Como posso te ajudar?', 10),
+    ('rastreio', E'Olá, {nome}! Tudo bem? 💙\n\nSeu pedido #{pedido} já está a caminho. Seguem os dados para acompanhar:\n\n📦 Código: {rastreio}\n🔎 Link de rastreamento: {link_rastreio}\n📍 Última atualização: {ultima_atualizacao}\n📅 Previsão de entrega: {previsao}\n\n{aviso_envio}\n\nQualquer dúvida, estamos à disposição! 😊\n\nEquipe Face Clean 🌿', 20),
+    ('status', E'Olá, {nome}! 💙 Seu pedido #{pedido} está com status: {status}.\nAssim que for postado, te mando o código de rastreio por aqui.', 30),
+    ('pedido', 'Pode me passar o número do pedido ou o CPF da compra, por favor? Assim eu já verifico pra você.', 40),
+    ('prazo', 'O prazo começa a contar depois que o pedido é postado. Assim que tiver atualização eu te aviso por aqui, tá bom?', 50),
+    ('obrigada', 'Por nada, {nome}! Qualquer coisa é só chamar por aqui 💙', 60)
+  ) as v(atalho, texto, ordem)
+ where not exists (select 1 from suporte.respostas);
+
+create table if not exists suporte.rastreio_cache (
+  codigo text primary key,
+  dados jsonb not null,
+  atualizado_em timestamptz not null default now()
+);
+
 create table if not exists suporte.aparelhos (
   aparelho text primary key,
   dados jsonb not null default '{}'::jsonb,
@@ -209,6 +235,22 @@ begin
 end
 $fn$;
 
+-- ---------------------------------------------------------------- código de serviço da Frenet pro rastreio
+
+create or replace function suporte.servico_frenet(p_transp text, p_codigo text, p_url text) returns text
+language sql immutable as $fn$
+  select case
+    when coalesce(p_transp, '') ~ '_LOG_DRPOFF$' then 'LOG_DRPOFF'
+    when coalesce(p_transp, '') ~ '_JTE_INT$' then 'JTE_INT'
+    when coalesce(p_transp, '') ~ '_F_3$' then 'F_3'
+    when coalesce(p_transp, '') ~ '_\d{5}(_BACKUP)?$' then substring(p_transp from '_(\d{5})(?:_BACKUP)?$')
+    when coalesce(p_url, '') ~ '/JAD/' or coalesce(p_codigo, '') ~ '^\d{9}$' then 'F_3'
+    when coalesce(p_url, '') ~ '/JTE/' or coalesce(p_codigo, '') ~ '^888\d{12}$' then 'JTE_INT'
+    when coalesce(p_url, '') ~ '/COR/' or coalesce(p_codigo, '') ~ '^[A-Z]{2}\d{9}BR$' then '03298'
+    when coalesce(p_url, '') ~* '(loggi|/LOG/)' then 'LOG_DRPOFF'
+    else null end
+$fn$;
+
 -- ---------------------------------------------------------------- card da cliente (lê o CRM, não escreve nada lá)
 
 create or replace function suporte.cliente_crm(p_numero text) returns jsonb
@@ -245,6 +287,8 @@ begin
                'metodo', p.metodo_pagamento, 'criado', p.created_at_yampi, 'pago_em', p.paid_at,
                'enviado', p.enviado_at, 'entregue', p.entregue_at, 'previsao', p.previsao_entrega,
                'transportadora', p.transportadora, 'rastreio', p.payload->>'track_code', 'rastreio_url', p.payload->>'track_url',
+               'servico', suporte.servico_frenet(p.transportadora, p.payload->>'track_code', p.payload->>'track_url'),
+               'rastreio_cache', (select jsonb_build_object('dados', r.dados, 'em', r.atualizado_em) from suporte.rastreio_cache r where r.codigo = p.payload->>'track_code'),
                'itens', (select coalesce(jsonb_agg(jsonb_build_object('t', i->>'title', 'q', i->>'qty')), '[]'::jsonb) from jsonb_array_elements(coalesce(p.itens, '[]'::jsonb)) i)
              ) x
         from public.pedidos p
@@ -279,11 +323,20 @@ begin
     select coalesce(jsonb_agg(jsonb_build_object(
              'conv', c.conv, 'nome', c.nome, 'numero', c.numero, 'ultima_msg', c.ultima_msg,
              'ultima_direcao', c.ultima_direcao, 'ultima_em', c.ultima_em, 'nao_lidas', c.nao_lidas,
-             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho) order by c.ultima_em desc), '[]'::jsonb)
+             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde)
+             order by case when coalesce(b->>'filtro', '') = 'esperando' then c.espera_desde end asc nulls last, c.ultima_em desc), '[]'::jsonb)
       into v_r
       from (
-        select * from suporte.conversas c
-         where (coalesce(b->>'filtro', 'abertas') = 'todas' or c.status = 'aberta')
+        select c.*,
+               case when c.ultima_direcao = 'in' and c.status = 'aberta' then (
+                 select min(m.criado_em) from suporte.mensagens m
+                  where m.conv = c.conv and m.direcao = 'in'
+                    and m.criado_em > coalesce((select max(o.criado_em) from suporte.mensagens o where o.conv = c.conv and o.direcao = 'out' and o.status <> 'cancelada'), '-infinity'::timestamptz)
+               ) end as espera_desde
+          from suporte.conversas c
+         where (coalesce(b->>'filtro', 'abertas') = 'todas'
+                or (coalesce(b->>'filtro', 'abertas') = 'abertas' and c.status = 'aberta')
+                or (b->>'filtro' = 'esperando' and c.status = 'aberta' and c.ultima_direcao = 'in'))
            and (v_busca is null or c.nome ilike '%' || v_busca || '%' or c.numero like '%' || regexp_replace(v_busca, '\D', '', 'g') || '%' and regexp_replace(v_busca, '\D', '', 'g') <> '')
          order by c.ultima_em desc
          limit 300
@@ -295,7 +348,50 @@ begin
       'aparelhos', (select coalesce(jsonb_agg(jsonb_build_object('aparelho', a.aparelho, 'visto_em', a.visto_em,
                       'segundos', extract(epoch from now() - a.visto_em)::int, 'dados', a.dados)), '[]'::jsonb)
                       from suporte.aparelhos a where a.aparelho <> '_painel'),
-      'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta'));
+      'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta'),
+      'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in'));
+  end if;
+
+  if v_acao = 'respostas' then
+    return jsonb_build_object('ok', true, 'respostas',
+      (select coalesce(jsonb_agg(jsonb_build_object('id', r.id::text, 'atalho', r.atalho, 'texto', r.texto) order by r.ordem, r.atalho), '[]'::jsonb) from suporte.respostas r));
+  end if;
+
+  if v_acao = 'resposta_salvar' then
+    v_txt := trim(coalesce(b->>'texto', ''));
+    if v_txt = '' or trim(coalesce(b->>'atalho', '')) = '' then return jsonb_build_object('ok', false, 'erro', 'atalho_e_texto_obrigatorios'); end if;
+    if coalesce(b->>'id', '') ~ '^\d+$' then
+      update suporte.respostas set atalho = lower(regexp_replace(trim(b->>'atalho'), '\s+', '-', 'g')), texto = v_txt, atualizado_em = now() where id = (b->>'id')::bigint;
+    else
+      insert into suporte.respostas (atalho, texto) values (lower(regexp_replace(trim(b->>'atalho'), '\s+', '-', 'g')), v_txt)
+      on conflict (atalho) do update set texto = excluded.texto, atualizado_em = now();
+    end if;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'resposta_apagar' then
+    delete from suporte.respostas where id = (b->>'id')::bigint;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'rastreio' then
+    v_txt := nullif(trim(coalesce(b->>'codigo', '')), '');
+    if v_txt is null then return jsonb_build_object('ok', false, 'erro', 'sem_codigo'); end if;
+    if not coalesce((b->>'forcar')::boolean, false) then
+      select jsonb_build_object('ok', true, 'codigo', r.codigo, 'em', r.atualizado_em, 'cache', true) || r.dados into v_r
+        from suporte.rastreio_cache r where r.codigo = v_txt and r.atualizado_em > now() - interval '20 minutes';
+      if v_r is not null then return v_r; end if;
+    end if;
+    select jsonb_build_object('ShippingServiceCode', suporte.servico_frenet(p.transportadora, p.payload->>'track_code', p.payload->>'track_url'),
+                              'TrackingNumber', v_txt, 'OrderNumber', p.numero)
+      into v_r
+      from public.pedidos p where p.payload->>'track_code' = v_txt
+     order by p.created_at_yampi desc nulls last limit 1;
+    if v_r is null then
+      v_r := jsonb_build_object('ShippingServiceCode', suporte.servico_frenet(nullif(b->>'transportadora', ''), v_txt, nullif(b->>'url', '')), 'TrackingNumber', v_txt);
+    end if;
+    if v_r->>'ShippingServiceCode' is null then return jsonb_build_object('ok', false, 'erro', 'transportadora_desconhecida', 'codigo', v_txt); end if;
+    return jsonb_build_object('ok', true, 'codigo', v_txt, 'consulta', v_r);
   end if;
 
   if v_acao = 'chat' then
@@ -379,6 +475,7 @@ begin
    where c.ultima_em < now() - interval '7 days'
      and not exists (select 1 from suporte.mensagens m where m.conv = c.conv);
   get diagnostics v_c = row_count;
+  delete from suporte.rastreio_cache where atualizado_em < now() - interval '7 days';
   return jsonb_build_object('ok', true, 'mensagens_apagadas', v_m, 'conversas_apagadas', v_c);
 end
 $fn$;
@@ -400,6 +497,12 @@ begin
   if r = 'out' then return suporte.r_out(coalesce(p->'body', '{}'::jsonb)); end if;
   if r = 'painel' then return suporte.r_painel(coalesce(p->'body', '{}'::jsonb)); end if;
   if r = 'limpar' then return suporte.r_limpar(); end if;
+  if r = 'rastreio_salvar' then
+    insert into suporte.rastreio_cache (codigo, dados, atualizado_em)
+    values (p->'body'->>'codigo', coalesce(p->'body'->'dados', '{}'::jsonb), now())
+    on conflict (codigo) do update set dados = excluded.dados, atualizado_em = now();
+    return jsonb_build_object('ok', true, 'codigo', p->'body'->>'codigo', 'em', now(), 'cache', false) || coalesce(p->'body'->'dados', '{}'::jsonb);
+  end if;
   return jsonb_build_object('ok', false, 'erro', 'rota_invalida');
 end
 $fn$;
