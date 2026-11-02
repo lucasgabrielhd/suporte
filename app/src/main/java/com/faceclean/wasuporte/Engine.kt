@@ -215,6 +215,26 @@ object Engine {
             val num = it.optString("numero")
             if (num.isNotBlank()) act = actions.values.firstOrNull { a -> a.numero == num }
         }
+        if (it.optString("tipo") == "imagem") {
+            val md = it.optJSONObject("midia")
+            val numero = it.optString("numero").ifBlank { act?.numero.orEmpty() }
+            val (st, erro) = if (md == null || md.optString("b64").isBlank()) "falhou" to "foto_nao_veio"
+                else EnviaFoto.enviar(app, numero, md.optString("mime"), md.optString("b64"), texto)
+            if (st == "enviado") {
+                Store.markSent(id)
+                if (texto.isNotBlank()) Store.rememberSent(conv, texto)
+                Store.inc("cnt_out")
+                lastSentAt = System.currentTimeMillis()
+                noteActivity()
+                Store.log("🖼 foto enviada pra ${act?.nome ?: conv}")
+            } else {
+                Store.inc("cnt_outfail")
+                Store.log("❌ foto não foi pra ${act?.nome ?: conv}: $erro")
+            }
+            Store.addAck(id, st, erro)
+            if (st == "enviado") SuporteListener.rescan()
+            return
+        }
         val status = when {
             texto.isEmpty() -> "falhou"
             act == null -> "sem_notificacao"
@@ -291,6 +311,8 @@ object Engine {
             .put("acessoArquivos", Sys.hasFilesAccess(app))
             .put("acessoContatos", Numero.temContatos(app))
             .put("audioAtivo", prefs.audioEnabled && prefs.groqToken.isNotBlank())
+            .put("fotoAtiva", SuporteAcessibilidade.ligado())
+            .put("telaComSenha", Tela.temSenha(app))
             .put("bateria", bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1)
             .put("carregando", bm?.isCharging ?: false)
             .put("conversasComBotao", actions.size)

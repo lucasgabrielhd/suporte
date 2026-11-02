@@ -147,6 +147,11 @@ input,textarea{font:inherit;color:var(--txt)}
 .tl2 li.tg:before{background:var(--ok)}.tl2 li.ty:before{background:var(--warn)}.tl2 li.tr:before{background:var(--bad)}.tl2 li.tb:before{background:var(--pri)}
 .tl2 .q{color:var(--mut);font-size:11px}
 .tl2 .tm{color:var(--mut);white-space:pre-wrap;margin-top:2px;max-height:3.9em;overflow:hidden}
+.fprev{display:none;align-items:center;gap:10px;padding:8px 14px 0;background:var(--panel)}
+.fprev.on{display:flex}
+.fprev img{height:64px;max-width:120px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.fprev .tx{font-size:12px;color:var(--mut);flex:1}
+.chatwrap.drag:after{content:'Solte a foto aqui';position:absolute;inset:8px;border:2px dashed var(--pri2);border-radius:14px;display:grid;place-items:center;background:rgba(15,115,180,.08);color:var(--pri);font-weight:650;z-index:6}
 @media (max-width:1100px){.main{grid-template-columns:300px 1fr 0}.main .crm{display:none}.main.crmon{grid-template-columns:300px 1fr 300px}.main.crmon .crm{display:block}}
 @media (max-width:760px){
 .main,.main.crmon,.main.nocrm{grid-template-columns:1fr}
@@ -345,7 +350,8 @@ function abrir(conv){
   $('#chat').innerHTML=`<div class="chead"><button class="icon back" id="voltar">←</button><div class="av" style="background:${corDe(conv)};flex-basis:36px;height:36px">${esc(ini(nomeConv(c)))}</div><div><div class="nm" id="hnome">${esc(nomeConv(c))}</div><div class="num" id="hnum">${esc(fone(c?.numero))}</div></div><span class="sp"></span><button class="btn sm" id="copiar" title="Copiar número">📋</button><button class="btn sm" id="resolver"></button><button class="btn sm" id="vcrm" title="Ficha da cliente">👤</button></div>
   <div class="chatwrap"><div id="bn"></div><div class="msgs" id="msgs"><div class="empty">Carregando…</div></div>
   <div class="qr" id="qr"></div>
-  <div class="comp"><button class="icon" id="bqr" title="Respostas rápidas (ou digite /)">⚡</button><textarea id="txt" rows="1" placeholder="Digite a resposta… (/ pra respostas rápidas)"></textarea><button class="btn pri" id="env">Enviar</button></div></div>`;
+  <div class="fprev" id="fprev"><img id="fimg" alt=""><span class="tx" id="ftx"></span><button class="btn sm" id="fx">✕ tirar foto</button></div>
+  <div class="comp"><button class="icon" id="bqr" title="Respostas rápidas (ou digite /)">⚡</button><button class="icon" id="bfoto" title="Mandar foto (ou cole com Ctrl+V)">📎</button><input type="file" id="ffile" accept="image/*" hidden><textarea id="txt" rows="1" placeholder="Digite a resposta… (/ pra respostas rápidas)"></textarea><button class="btn pri" id="env">Enviar</button></div></div>`;
   $('#voltar').onclick=()=>{$('#main').classList.remove('open','crmon');S.sel=null;renderLista()};
   $('#copiar').onclick=()=>{const n=S.chat?.conversa?.numero||c?.numero;if(n){navigator.clipboard?.writeText(n);toast('Número copiado')}else toast('Sem número')};
   $('#resolver').onclick=async()=>{const st=S.chat?.conversa?.status==='resolvida'?'aberta':'resolvida';try{await api('status',{conv,status:st});toast(st==='resolvida'?'Marcada como resolvida':'Reaberta');if(S.chat)S.chat.conversa.status=st;pintaResolver();loopConvs(true)}catch(e){toast('Erro: '+e.message)}};
@@ -354,6 +360,15 @@ function abrir(conv){
   ta.oninput=()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';if(ta.value.startsWith('/'))mostraQr(ta.value.slice(1));else $('#qr').classList.remove('on')};
   ta.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();enviar()}if(e.key==='Escape')$('#qr').classList.remove('on')};
   $('#env').onclick=enviar;
+  S.foto=null;
+  $('#bfoto').onclick=()=>$('#ffile').click();
+  $('#ffile').onchange=e=>{const f=e.target.files&&e.target.files[0];if(f)carregaFoto(f);e.target.value=''};
+  $('#fx').onclick=()=>tiraFoto();
+  ta.addEventListener('paste',e=>{const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));if(it){e.preventDefault();carregaFoto(it.getAsFile())}});
+  const cw=document.querySelector('.chatwrap');
+  cw.addEventListener('dragover',e=>{if([...e.dataTransfer.items].some(i=>i.type.startsWith('image/'))){e.preventDefault();cw.classList.add('drag')}});
+  cw.addEventListener('dragleave',e=>{if(!cw.contains(e.relatedTarget))cw.classList.remove('drag')});
+  cw.addEventListener('drop',e=>{e.preventDefault();cw.classList.remove('drag');const f=[...e.dataTransfer.files].find(x=>x.type.startsWith('image/'));if(f)carregaFoto(f)});
   $('#bqr').onclick=()=>{const q=$('#qr');q.classList.contains('on')?q.classList.remove('on'):mostraQr('')};
   $('#msgs').onscroll=e=>{const m=e.target;S.stick=m.scrollHeight-m.scrollTop-m.clientHeight<80};
   $('#main').classList.toggle('nocrm',!S.crmOpen&&innerWidth>1100);
@@ -472,13 +487,16 @@ function bolha(m){
     h+=m.transcricao?`<div class="tr">“${esc(m.transcricao)}”</div>`:`<div class="tag">sem transcrição${m.erro?' ('+esc(m.erro)+')':''}</div>`;
   }else if(m.tipo==='imagem'){
     const mds=m.midias||[];
-    if(mds.length)for(const md of mds){const u=S.media.get(md.id);h+=u?`<img src="${u}" alt="foto" data-zoom="1">`:`<div class="tag" data-img="${md.id}">📷 carregando foto…</div>`}
-    else h+=`<div class="tag">📷 Foto (não veio pro painel${m.erro?': '+esc(m.erro):''})</div>`;
+    if(m.localUrl)h+=`<img src="${m.localUrl}" alt="foto" data-zoom="1">`;
+    else if(mds.length)for(const md of mds){const u=S.media.get(md.id);h+=u?`<img src="${u}" alt="foto" data-zoom="1">`:`<div class="tag" data-img="${md.id}">📷 carregando foto…</div>`}
+    else if(!m.localUrl)h+=`<div class="tag">📷 Foto (não veio pro painel${m.erro&&m.direcao!=='out'?': '+esc(m.erro):''})</div>`;
     if(m.legenda)h+=`<div>${linkify(m.legenda)}</div>`;
   }else h+=linkify(m.texto);
   const st=out?ST[m.status]||['','','']:null;
   h+=`<div class="meta">${hora(m.criado_em)}${st?` <span class="${st[1]}" title="${st[2]}">${st[0]}</span>`:''}</div>`;
   if(out&&(m.status==='sem_notificacao'||m.status==='falhou')){
+    const ERR={acessibilidade_desligada:'A acessibilidade do app está desligada no celular (necessária pra foto).',tela_bloqueada_com_senha:'O celular tem senha na tela de bloqueio, então não dá pra abrir o WhatsApp sozinho.',sem_numero:'Conversa sem número.',nao_achou_botao_enviar:'O WhatsApp abriu mas não achei o botão Enviar.',whatsapp_nao_abriu:'O WhatsApp não abriu no celular.'};
+    if(m.tipo==='imagem'&&ERR[m.erro]){h+=`<div class="err">${ERR[m.erro]}<button class="btn sm" data-re="${m.id}">Tentar de novo</button><button class="btn sm" data-cx="${m.id}">Cancelar</button></div>`;return`<div class="b ${out?'out':'in'}" data-id="${m.id}">${h}</div>`}
     h+=`<div class="err">${m.status==='sem_notificacao'?'A notificação dessa conversa sumiu do celular. Sai quando a cliente mandar outra mensagem, ou responda no próprio celular.':'Não deu pra enviar ('+esc(m.erro||'erro')+').'}<button class="btn sm" data-re="${m.id}">Tentar de novo</button><button class="btn sm" data-cx="${m.id}">Cancelar</button></div>`;
   }
   return`<div class="b ${out?'out':'in'}" data-id="${m.id}">${h}</div>`;
@@ -494,7 +512,7 @@ function renderChat(){
   const ms=[...S.chat.mensagens];
   const ids=new Set(ms.map(m=>m.id));
   S.pend=S.pend.filter(p=>!(p.id&&ids.has(p.id)));
-  for(const p of S.pend)if(p.conv===S.sel)ms.push({id:p.id||'l'+p.l,direcao:'out',tipo:'texto',texto:p.texto,autor:S.nome,status:p.st==='erro'?'falhou':'pendente',erro:p.st==='erro'?'não chegou no n8n':'',criado_em:p.em});
+  for(const p of S.pend)if(p.conv===S.sel)ms.push({id:p.id||'l'+p.l,direcao:'out',tipo:p.foto?'imagem':'texto',texto:p.texto,legenda:p.foto?p.texto:'',localUrl:p.foto,midias:[],autor:S.nome,status:p.st==='erro'?'falhou':'pendente',erro:p.st==='erro'?'não chegou no n8n':'',criado_em:p.em});
   const assin=JSON.stringify(ms.map(m=>[m.id,m.status,(m.midias||[]).map(d=>S.media.has(d.id)?1:0).join('')]));
   if(assin===S.lastIds)return;
   S.lastIds=assin;
@@ -523,13 +541,41 @@ document.addEventListener('click',async e=>{
 });
 $('#zoom').onclick=()=>$('#zoom').classList.remove('on');
 
+function tiraFoto(){if(S.foto?.url)URL.revokeObjectURL(S.foto.url);S.foto=null;$('#fprev')?.classList.remove('on');const ta=$('#txt');if(ta)ta.placeholder='Digite a resposta… (/ pra respostas rápidas)'}
+function carregaFoto(file){
+  const num=S.chat?.conversa?.numero||S.convs.find(c=>c.conv===S.sel)?.numero;
+  if(!num){toast('Essa conversa não tem número, então não dá pra mandar foto');return}
+  if(!file||!file.type.startsWith('image/')){toast('Só dá pra mandar imagem');return}
+  const url=URL.createObjectURL(file);const img=new Image();
+  img.onload=()=>{
+    const max=1600,k=Math.min(1,max/Math.max(img.width,img.height));
+    const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+    const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(img,0,0,c.width,c.height);
+    const du=c.toDataURL('image/jpeg',.85);URL.revokeObjectURL(url);
+    const b64=du.split(',')[1];
+    if(b64.length>4400000){toast('Foto grande demais');return}
+    if(S.foto?.url)URL.revokeObjectURL(S.foto.url);
+    S.foto={b64,mime:'image/jpeg',url:du};
+    $('#fimg').src=du;$('#ftx').textContent=`Foto pronta (${Math.round(b64.length*.75/1024)} KB). O texto da caixa vai como legenda.`;
+    $('#fprev').classList.add('on');const ta=$('#txt');ta.placeholder='Legenda da foto (opcional)… Enter envia';ta.focus();
+  };
+  img.onerror=()=>{URL.revokeObjectURL(url);toast('Não consegui abrir essa imagem')};
+  img.src=url;
+}
 let seq=0;
 async function enviar(){
-  const ta=$('#txt');const t=ta.value.trim();if(!t||!S.sel)return;
-  const p={l:++seq,conv:S.sel,texto:t,em:new Date().toISOString(),st:'env',idLocal:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random())};
-  S.pend.push(p);ta.value='';ta.style.height='auto';S.stick=true;S.lastIds='';renderChat();
-  try{const j=await api('enviar',{conv:p.conv,texto:t,autor:S.nome,idLocal:p.idLocal});if(j.ok){p.id=j.id;p.st='ok'}else{p.st='erro';toast('Não enviou: '+(j.erro||''))}}
-  catch(e){p.st='erro';toast('Sem conexão com o n8n — tente de novo')}
+  const ta=$('#txt');const t=ta.value.trim();const foto=S.foto;
+  if((!t&&!foto)||!S.sel)return;
+  const p={l:++seq,conv:S.sel,texto:t,em:new Date().toISOString(),st:'env',foto:foto?foto.url:null,idLocal:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random())};
+  S.pend.push(p);ta.value='';ta.style.height='auto';S.stick=true;S.lastIds='';
+  if(foto){S.foto=null;$('#fprev').classList.remove('on');ta.placeholder='Digite a resposta… (/ pra respostas rápidas)'}
+  renderChat();
+  try{
+    const extra={conv:p.conv,texto:t,autor:S.nome,idLocal:p.idLocal};
+    if(foto)extra.midia={mime:foto.mime,b64:foto.b64};
+    const j=await api('enviar',extra);
+    if(j.ok){p.id=j.id;p.st='ok'}else{p.st='erro';toast('Não enviou: '+(j.erro==='sem_numero_pra_foto'?'conversa sem número':j.erro||''))}
+  }catch(e){p.st='erro';toast('Sem conexão com o n8n — tente de novo')}
   S.lastIds='';renderChat();loopChat();
 }
 

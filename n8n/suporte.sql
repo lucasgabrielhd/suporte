@@ -218,18 +218,19 @@ begin
       from suporte.mensagens m
       join suporte.conversas c on c.conv = m.conv
      where m.direcao = 'out' and c.aparelho = v_ap
-       and (m.status = 'pendente' or (m.status = 'enviando' and m.atualizado_em < now() - interval '90 seconds'))
+       and (m.status = 'pendente' or (m.status = 'enviando' and m.atualizado_em < now() - case when m.tipo = 'imagem' then interval '3 minutes' else interval '90 seconds' end))
      order by m.id
-     limit 10
+     limit 5
        for update of m skip locked
   ), upd as (
     update suporte.mensagens m
        set status = 'enviando', tentativas = m.tentativas + 1, atualizado_em = now()
       from alvo
      where m.id = alvo.id
-    returning m.id, m.conv, m.texto
+    returning m.id, m.conv, m.texto, m.tipo
   )
-  select coalesce(jsonb_agg(jsonb_build_object('id', upd.id::text, 'conv', upd.conv, 'texto', upd.texto, 'numero', c.numero, 'nome', c.nome) order by upd.id), '[]'::jsonb)
+  select coalesce(jsonb_agg(jsonb_build_object('id', upd.id::text, 'conv', upd.conv, 'texto', upd.texto, 'numero', c.numero, 'nome', c.nome, 'tipo', upd.tipo,
+           'midia', case when upd.tipo = 'imagem' then (select jsonb_build_object('mime', d.mime, 'b64', d.dados) from suporte.midias d where d.mensagem_id = upd.id order by d.id limit 1) end) order by upd.id), '[]'::jsonb)
     into v_itens
     from upd join suporte.conversas c on c.conv = upd.conv;
 
@@ -462,17 +463,30 @@ begin
 
   if v_acao = 'enviar' then
     v_txt := trim(coalesce(b->>'texto', ''));
-    if v_txt = '' then return jsonb_build_object('ok', false, 'erro', 'texto_vazio'); end if;
+    if v_txt = '' and coalesce(b->'midia'->>'b64', '') = '' then return jsonb_build_object('ok', false, 'erro', 'texto_vazio'); end if;
     if length(v_txt) > 4000 then return jsonb_build_object('ok', false, 'erro', 'texto_grande_demais'); end if;
-    if not exists (select 1 from suporte.conversas where conv = v_conv) then return jsonb_build_object('ok', false, 'erro', 'conversa_nao_encontrada'); end if;
-    insert into suporte.mensagens (conv, direcao, tipo, texto, status, autor, evento)
-    values (v_conv, 'out', 'texto', v_txt, 'pendente', nullif(b->>'autor', ''), nullif(b->>'idLocal', ''))
+    if length(coalesce(b->'midia'->>'b64', '')) > 4500000 then return jsonb_build_object('ok', false, 'erro', 'foto_grande_demais'); end if;
+    select * into v_c from suporte.conversas where conv = v_conv;
+    if not found then return jsonb_build_object('ok', false, 'erro', 'conversa_nao_encontrada'); end if;
+    if coalesce(b->'midia'->>'b64', '') <> '' and length(v_c.numero) < 12 then return jsonb_build_object('ok', false, 'erro', 'sem_numero_pra_foto'); end if;
+    insert into suporte.mensagens (conv, direcao, tipo, texto, legenda, status, autor, evento)
+    values (v_conv, 'out',
+            case when coalesce(b->'midia'->>'b64', '') <> '' then 'imagem' else 'texto' end,
+            v_txt,
+            case when coalesce(b->'midia'->>'b64', '') <> '' then nullif(v_txt, '') end,
+            'pendente', nullif(b->>'autor', ''), nullif(b->>'idLocal', ''))
     on conflict (evento) do nothing
     returning id into v_id;
     if v_id is null then
       select id into v_id from suporte.mensagens where evento = b->>'idLocal';
     else
-      update suporte.conversas set ultima_msg = left(v_txt, 200), ultima_direcao = 'out', ultima_em = now(), nao_lidas = 0 where conv = v_conv;
+      if coalesce(b->'midia'->>'b64', '') <> '' then
+        insert into suporte.midias (mensagem_id, mime, dados) values (v_id, coalesce(nullif(b->'midia'->>'mime', ''), 'image/jpeg'), b->'midia'->>'b64');
+      end if;
+      update suporte.conversas
+         set ultima_msg = left(case when coalesce(b->'midia'->>'b64', '') <> '' then '📷 ' || coalesce(nullif(v_txt, ''), 'Foto') else v_txt end, 200),
+             ultima_direcao = 'out', ultima_em = now(), nao_lidas = 0
+       where conv = v_conv;
     end if;
     return jsonb_build_object('ok', true, 'id', v_id::text);
   end if;

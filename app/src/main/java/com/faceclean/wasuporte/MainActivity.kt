@@ -122,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         button("3. Liberar bateria") { pedirBateria() }
         button("4. Acesso a arquivos (áudio e foto)") { pedirArquivos() }
         button("5. Contatos (número da cliente salva)") { requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), 43) }
+        button("6. Acessibilidade (pra mandar foto pelo painel)") { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
 
         sep()
         label("Últimos eventos")
@@ -155,7 +156,8 @@ class MainActivity : AppCompatActivity() {
             append("${ok(SuporteListener.connected)} Ouvindo o WhatsApp\n")
             append("${ok(Sys.ignoringBattery(this@MainActivity))} Bateria sem restrição\n")
             append("${ok(Sys.hasFilesAccess(this@MainActivity))} Arquivos · ${ok(prefs.audioEnabled && prefs.groqToken.isNotBlank())} Transcrição\n")
-            append("${ok(Numero.temContatos(this@MainActivity))} Contatos\n\n")
+            append("${ok(Numero.temContatos(this@MainActivity))} Contatos\n")
+            append("${ok(SuporteAcessibilidade.ligado())} Acessibilidade (fotos) · ${ok(!Tela.temSenha(this@MainActivity))} Tela sem senha\n\n")
             append("Última conversa com o n8n: $poll · painel ${if (Engine.painelAtivo) "aberto" else "fechado"}\n")
             append("Conversas que dá pra responder: ${Engine.actionsCount()}\n")
             append("Na fila pro painel: ${Store.pendingCount}\n")

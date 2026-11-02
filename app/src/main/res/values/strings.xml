@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">WA Suporte FC</string>
+    <string name="acessibilidade_desc">Usado só pra tocar em Enviar quando a atendente manda uma foto pelo painel. Não lê nem envia mais nada.</string>
 </resources>
