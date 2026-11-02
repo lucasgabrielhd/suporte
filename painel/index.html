@@ -350,7 +350,32 @@ function abrir(conv){
   loopChat(true);
 }
 
-async function carregaRespostas(){try{const j=await api('respostas');if(j.ok)S.respostas=j.respostas||[]}catch(e){}}
+const PADRAO_RESP=[
+{id:'p1',atalho:'oi',texto:'Oi, {nome}! Aqui é {atendente}, do suporte da Face Clean 💙 Como posso te ajudar?'},
+{id:'p2',atalho:'rastreio',texto:'Olá, {nome}! Tudo bem? 💙\n\nSeu pedido #{pedido} já está a caminho. Seguem os dados para acompanhar:\n\n📦 Código: {rastreio}\n🔎 Link de rastreamento: {link_rastreio}\n📍 Última atualização: {ultima_atualizacao}\n📅 Previsão de entrega: {previsao}\n\n{aviso_envio}\n\nQualquer dúvida, estamos à disposição! 😊\n\nEquipe Face Clean 🌿'},
+{id:'p3',atalho:'status',texto:'Olá, {nome}! 💙 Seu pedido #{pedido} está com status: {status}.\nAssim que for postado, te mando o código de rastreio por aqui.'},
+{id:'p4',atalho:'pedido',texto:'Pode me passar o número do pedido ou o CPF da compra, por favor? Assim eu já verifico pra você.'},
+{id:'p5',atalho:'prazo',texto:'O prazo começa a contar depois que o pedido é postado. Assim que tiver atualização eu te aviso por aqui, tá bom?'},
+{id:'p6',atalho:'obrigada',texto:'Por nada, {nome}! Qualquer coisa é só chamar por aqui 💙'}];
+const antigasLocais=()=>(LS.get('qr',null)||[]).filter(r=>r&&r.a&&r.t).map((r,i)=>({id:'l'+i,atalho:String(r.a).toLowerCase(),texto:r.t}));
+async function carregaRespostas(){
+  let j=null;
+  try{j=await api('respostas')}catch(e){}
+  if(j&&j.ok){
+    S.respostas=j.respostas||[];S.respDB=true;
+    if(!LS.get('qr_migrado',false)){
+      const tem=new Set(S.respostas.map(r=>r.atalho));
+      const novas=antigasLocais().filter(r=>!tem.has(r.atalho));
+      for(const r of novas){try{await api('resposta_salvar',{atalho:r.atalho,texto:r.texto})}catch(e){}}
+      LS.set('qr_migrado',true);
+      if(novas.length){try{const k=await api('respostas');if(k.ok)S.respostas=k.respostas||[]}catch(e){}toast(`${novas.length} resposta(s) rápida(s) antiga(s) salva(s) no banco`)}
+    }
+    return;
+  }
+  S.respDB=false;
+  const tem=new Set(PADRAO_RESP.map(r=>r.atalho));
+  S.respostas=[...PADRAO_RESP,...antigasLocais().filter(r=>!tem.has(r.atalho))];
+}
 function primeiroNome(){const c=S.chat?.cliente,v=S.chat?.conversa;const n=(c&&!c.erro&&c.nome)||v?.nome_crm||((v?.nome||'').match(/\p{L}/u)?v.nome:'');const p=String(n).trim().split(/\s+/)[0]||'';return p?p[0].toUpperCase()+p.slice(1).toLowerCase():''}
 const transpNome=t=>String(t||'').replace(/^FRENET_/,'').replace(/_(\d{5}|LOG_DRPOFF|JTE_INT|F_3)(_BACKUP)?$/,'').replace(/_/g,' ').toLowerCase().replace(/\b\p{L}/gu,x=>x.toUpperCase());
 function pedidoAtual(){const ps=(S.chat?.cliente&&!S.chat.cliente.erro&&S.chat.cliente.ultimos_pedidos)||[];return ps[S.pedSel]||ps[0]||null}
@@ -377,12 +402,13 @@ function mostraQr(f){
   q.onclick=async e=>{
     const ed=e.target.closest('[data-qed]');if(ed){e.stopPropagation();abreQr(S.respostas.find(r=>r.id===ed.dataset.qed));return}
     const del=e.target.closest('[data-qdel]');
-    if(del){e.stopPropagation();const r=S.respostas.find(x=>x.id===del.dataset.qdel);if(!confirm(`Apagar /${r?.atalho}? Some pra todo mundo do suporte.`))return;try{await api('resposta_apagar',{id:del.dataset.qdel});await carregaRespostas();mostraQr(f);toast('Apagada')}catch(x){toast('Erro ao apagar')}return}
+    if(del){e.stopPropagation();if(!S.respDB){toast('Pra apagar, rode o ATUALIZAR schema suporte no n8n');return}const r=S.respostas.find(x=>x.id===del.dataset.qdel);if(!confirm(`Apagar /${r?.atalho}? Some pra todo mundo do suporte.`))return;try{await api('resposta_apagar',{id:del.dataset.qdel});await carregaRespostas();mostraQr(f);toast('Apagada')}catch(x){toast('Erro ao apagar')}return}
     if(e.target.closest('[data-qnovo]')){abreQr(null,$('#txt').value.replace(/^\/\S*\s?/,'').trim());return}
     const x=e.target.closest('[data-q]');if(x){const r=S.respostas.find(y=>y.id===x.dataset.q);if(r)poeNaCaixa(aplicaModelo(r.texto))}
   };
 }
 function abreQr(r,texto=''){
+  if(!S.respDB){toast('Pra criar/editar, rode o ATUALIZAR schema suporte no n8n');return}
   S.qrEdit=r?r.id:null;
   $('#qTit').textContent=r?'Editar resposta rápida':'Nova resposta rápida';
   $('#qAt').value=r?r.atalho:'';$('#qTx').value=r?r.texto:texto;$('#qMsg').textContent='';
