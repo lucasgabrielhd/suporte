@@ -207,7 +207,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const linkify=s=>esc(s).replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
 const cores=['#0f73b4','#139a5b','#8a4fd6','#d1572a','#c2185b','#00897b','#5d6d7e','#b8860b'];
 const corDe=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return cores[h%cores.length]};
-const ini=n=>{const p=String(n||'?').replace(/[^\p{L}\p{N} ]/gu,'').trim().split(/\s+/);return((p[0]||'?')[0]+((p[1]||'')[0]||'')).toUpperCase()};
+const ini=n=>{const p=String(n||'?').replace(/[^\p{L}\p{N} ]/gu,'').trim().split(/\s+/).filter(w=>!/^(da|de|do|das|dos|e)$/i.test(w));return((p[0]||'?')[0]+(p.length>1?p[p.length-1][0]:'')).toUpperCase()};
 const fone=n=>{const d=String(n||'');if(d.length===13)return`(${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`;if(d.length===12)return`(${d.slice(2,4)}) ${d.slice(4,8)}-${d.slice(8)}`;return d};
 const dia=d=>new Date(d).toLocaleDateString('pt-BR',{timeZone:TZ});
 const hora=d=>new Date(d).toLocaleTimeString('pt-BR',{timeZone:TZ,hour:'2-digit',minute:'2-digit'});
@@ -258,13 +258,15 @@ function statusCel(aps){
   S.celOk=s<=90&&!problemas.length;
 }
 
+const tc=n=>String(n||'').trim().toLowerCase().replace(/(^|[\s'-])(\p{L})/gu,(m,a,b)=>a+b.toUpperCase()).replace(/ (Da|De|Do|Das|Dos|E) /g,m=>m.toLowerCase());
+const nomeConv=c=>c?.nome_crm?tc(c.nome_crm):(c?.nome||fone(c?.numero)||'Sem nome');
 const espMin=c=>c.espera_desde?Math.max(0,Math.floor((Date.now()-S.skew-Date.parse(c.espera_desde))/60000)):null;
 const espTxt=m=>m<60?m+' min':Math.floor(m/60)+'h'+(m%60?String(m%60).padStart(2,'0'):'');
 function renderLista(){
   const el=$('#lista');
   if(!S.convs.length){el.innerHTML=`<div class="empty">${S.busca?'Nada encontrado':S.filtro==='esperando'?'Ninguém esperando resposta 🎉':S.filtro==='abertas'?'Nenhuma conversa aberta 🎉':'Nenhuma conversa nos últimos 7 dias'}</div>`;return}
   el.innerHTML=S.convs.map(c=>{
-    const nome=c.nome||fone(c.numero)||'Sem nome';
+    const nome=nomeConv(c);
     const pre=c.ultima_direcao==='out'?'Você: ':'';
     const m=espMin(c);
     const w=m==null?'':`<span class="wt${m>=15?' r':m>=5?' m':''}" title="Esperando resposta">⏱ ${espTxt(m)}</span>`;
@@ -288,7 +290,7 @@ let tBusca;$('#busca').oninput=e=>{clearTimeout(tBusca);tBusca=setTimeout(()=>{S
 
 let tConvs,convsBusy=false,piscaT=null;
 function notifica(c){
-  const nome=c.nome||fone(c.numero)||'Cliente';
+  const nome=nomeConv(c);
   if('Notification'in window&&Notification.permission==='granted'){
     try{const n=new Notification(nome,{body:c.ultima_msg||'Nova mensagem',tag:c.conv,icon:'https://cdn.shopify.com/s/files/1/0697/0169/7834/files/0679FFdqwedw.png?v=1758301721',renotify:true});n.onclick=()=>{window.focus();abrir(c.conv);n.close()}}catch(e){}
   }
@@ -327,7 +329,7 @@ function abrir(conv){
   const c=S.convs.find(x=>x.conv===conv);
   if(c)c.nao_lidas=0;
   renderLista();
-  $('#chat').innerHTML=`<div class="chead"><button class="icon back" id="voltar">←</button><div class="av" style="background:${corDe(conv)};flex-basis:36px;height:36px">${esc(ini(c?.nome||''))}</div><div><div class="nm">${esc(c?.nome||'')}</div><div class="num" id="hnum">${esc(fone(c?.numero))}</div></div><span class="sp"></span><button class="btn sm" id="copiar" title="Copiar número">📋</button><button class="btn sm" id="resolver"></button><button class="btn sm" id="vcrm" title="Ficha da cliente">👤</button></div>
+  $('#chat').innerHTML=`<div class="chead"><button class="icon back" id="voltar">←</button><div class="av" style="background:${corDe(conv)};flex-basis:36px;height:36px">${esc(ini(nomeConv(c)))}</div><div><div class="nm" id="hnome">${esc(nomeConv(c))}</div><div class="num" id="hnum">${esc(fone(c?.numero))}</div></div><span class="sp"></span><button class="btn sm" id="copiar" title="Copiar número">📋</button><button class="btn sm" id="resolver"></button><button class="btn sm" id="vcrm" title="Ficha da cliente">👤</button></div>
   <div class="chatwrap"><div id="bn"></div><div class="msgs" id="msgs"><div class="empty">Carregando…</div></div>
   <div class="qr" id="qr"></div>
   <div class="comp"><button class="icon" id="bqr" title="Respostas rápidas (ou digite /)">⚡</button><textarea id="txt" rows="1" placeholder="Digite a resposta… (/ pra respostas rápidas)"></textarea><button class="btn pri" id="env">Enviar</button></div></div>`;
@@ -349,7 +351,7 @@ function abrir(conv){
 }
 
 async function carregaRespostas(){try{const j=await api('respostas');if(j.ok)S.respostas=j.respostas||[]}catch(e){}}
-function primeiroNome(){const c=S.chat?.cliente,v=S.chat?.conversa;const n=(c&&!c.erro&&c.nome)||((v?.nome||'').match(/\p{L}/u)?v.nome:'');const p=String(n).trim().split(/\s+/)[0]||'';return p?p[0].toUpperCase()+p.slice(1).toLowerCase():''}
+function primeiroNome(){const c=S.chat?.cliente,v=S.chat?.conversa;const n=(c&&!c.erro&&c.nome)||v?.nome_crm||((v?.nome||'').match(/\p{L}/u)?v.nome:'');const p=String(n).trim().split(/\s+/)[0]||'';return p?p[0].toUpperCase()+p.slice(1).toLowerCase():''}
 const transpNome=t=>String(t||'').replace(/^FRENET_/,'').replace(/_(\d{5}|LOG_DRPOFF|JTE_INT|F_3)(_BACKUP)?$/,'').replace(/_/g,' ').toLowerCase().replace(/\b\p{L}/gu,x=>x.toUpperCase());
 function pedidoAtual(){const ps=(S.chat?.cliente&&!S.chat.cliente.erro&&S.chat.cliente.ultimos_pedidos)||[];return ps[S.pedSel]||ps[0]||null}
 function ultimaAtu(p){const r=p?.rastreio&&S.rast.get(p.rastreio);const e=r&&r.eventos&&r.eventos[0];if(!e)return'';return[e.descricao,e.local].filter(Boolean).join(' — ')+(e.quando?` (${quandoEv(e.quando)})`:'')}
@@ -446,7 +448,8 @@ function bolha(m){
 function renderChat(){
   const box=$('#msgs');if(!box||!S.chat)return;
   const c=S.chat.conversa;
-  $('#hnum').textContent=fone(c.numero)||'sem número';
+  $('#hnome').textContent=nomeConv(c);
+  $('#hnum').textContent=(fone(c.numero)||'sem número')+(c.nome_crm&&c.nome&&!/^\+?[\d\s()-]+$/.test(c.nome)&&c.nome!==c.nome_crm?` · no celular: ${c.nome}`:'');
   pintaResolver();
   $('#bn').innerHTML=c.tem_botao?(S.celOk===false?'<div class="banner">O celular do suporte está com problema ou offline — as respostas ficam na fila até ele voltar.</div>':''):'<div class="banner">⚠ Não tem notificação dessa conversa no celular agora. A resposta só sai quando a cliente mandar outra mensagem (ou responda direto no celular).</div>';
   const ms=[...S.chat.mensagens];
@@ -536,7 +539,7 @@ function renderCrm(c){
     ${p.entregue?`<div class="s">Entregue em ${dia(p.entregue)}</div>`:p.previsao?`<div class="s">Previsão: ${dia(p.previsao)}</div>`:''}
     <div class="itens">${(p.itens||[]).map(x=>`${esc(x.q)}× ${esc(x.t)}`).join('<br>')}</div>
     <div class="acts">${p.rastreio?`<button class="btn sm pri" data-envrast="${i}">📦 Enviar rastreio</button>`:`<button class="btn sm" data-envst="${i}">📋 Enviar status</button>`}</div></div>`).join('');
-  el.innerHTML=voltar+`<h3>Cliente</h3><div class="card"><div style="font-weight:650;font-size:15px;margin-bottom:6px">${esc(c.nome)}</div>
+  el.innerHTML=voltar+`<h3>Cliente</h3><div class="card"><div style="font-weight:650;font-size:15px;margin-bottom:6px">${esc(tc(c.nome))}</div>
     <div class="kv"><span>Telefone</span><span>${esc(fone(c.telefone))}</span><span>E-mail</span><span style="word-break:break-all">${esc(c.email||'—')}</span><span>Cidade</span><span>${esc([c.cidade,c.uf].filter(Boolean).join(' / ')||'—')}</span><span>Pedidos</span><span>${c.pedidos??0} · ${brl(c.ltv)}</span><span>Última compra</span><span>${c.ultimo_pedido?dia(c.ultimo_pedido):'—'}</span></div>
     <div class="chips">${c.rfm?`<span class="chip">${esc(c.rfm)}</span>`:''}${c.optout?'<span class="chip">opt-out</span>':''}</div></div>
     ${c.ficha?`<h3>Ficha</h3><div class="card ficha">${esc(c.ficha)}</div>`:''}

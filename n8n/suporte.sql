@@ -19,6 +19,7 @@ create table if not exists suporte.conversas (
   criado_em timestamptz not null default now()
 );
 create index if not exists conversas_ultima_idx on suporte.conversas (ultima_em desc);
+alter table suporte.conversas add column if not exists nome_crm text;
 
 create table if not exists suporte.mensagens (
   id bigserial primary key,
@@ -140,6 +141,9 @@ begin
          numero = case when excluded.numero <> '' then excluded.numero else c.numero end,
          tem_botao = true;
 
+  update suporte.conversas set nome_crm = suporte.nome_crm(numero)
+   where conv = v_conv and numero <> '' and nome_crm is null;
+
   for m in select * from jsonb_array_elements(coalesce(b->'msgs', '[]'::jsonb)) loop
     v_id := null;
     insert into suporte.mensagens (conv, direcao, tipo, texto, transcricao, legenda, duracao, evento, erro, criado_em)
@@ -251,6 +255,28 @@ language sql immutable as $fn$
     else null end
 $fn$;
 
+-- ---------------------------------------------------------------- nome da cliente no CRM (pro contato que não está salvo no celular)
+
+create or replace function suporte.nome_crm(p_numero text) returns text
+language plpgsql stable as $fn$
+declare
+  v_num text := regexp_replace(coalesce(p_numero, ''), '\D', '', 'g');
+  v_alts text[];
+  v_nome text;
+begin
+  if length(v_num) < 12 then return null; end if;
+  v_alts := array[v_num];
+  if length(v_num) = 13 and substr(v_num, 5, 1) = '9' then v_alts := v_alts || (substr(v_num, 1, 4) || substr(v_num, 6)); end if;
+  if length(v_num) = 12 then v_alts := v_alts || (substr(v_num, 1, 4) || '9' || substr(v_num, 5)); end if;
+  select nullif(trim(c.nome), '') into v_nome from public.clientes c
+   where c.telefone = any(v_alts) and c.mesclado_em is null
+   order by c.ultimo_pedido_at desc nulls last limit 1;
+  return v_nome;
+exception when others then
+  return null;
+end
+$fn$;
+
 -- ---------------------------------------------------------------- card da cliente (lê o CRM, não escreve nada lá)
 
 create or replace function suporte.cliente_crm(p_numero text) returns jsonb
@@ -323,7 +349,7 @@ begin
     select coalesce(jsonb_agg(jsonb_build_object(
              'conv', c.conv, 'nome', c.nome, 'numero', c.numero, 'ultima_msg', c.ultima_msg,
              'ultima_direcao', c.ultima_direcao, 'ultima_em', c.ultima_em, 'nao_lidas', c.nao_lidas,
-             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde)
+             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde, 'nome_crm', c.nome_crm)
              order by case when coalesce(b->>'filtro', '') = 'esperando' then c.espera_desde end asc nulls last, c.ultima_em desc), '[]'::jsonb)
       into v_r
       from (
@@ -337,7 +363,7 @@ begin
          where (coalesce(b->>'filtro', 'abertas') = 'todas'
                 or (coalesce(b->>'filtro', 'abertas') = 'abertas' and c.status = 'aberta')
                 or (b->>'filtro' = 'esperando' and c.status = 'aberta' and c.ultima_direcao = 'in'))
-           and (v_busca is null or c.nome ilike '%' || v_busca || '%' or c.numero like '%' || regexp_replace(v_busca, '\D', '', 'g') || '%' and regexp_replace(v_busca, '\D', '', 'g') <> '')
+           and (v_busca is null or c.nome ilike '%' || v_busca || '%' or coalesce(c.nome_crm, '') ilike '%' || v_busca || '%' or c.numero like '%' || regexp_replace(v_busca, '\D', '', 'g') || '%' and regexp_replace(v_busca, '\D', '', 'g') <> '')
          order by c.ultima_em desc
          limit 300
       ) c;
@@ -412,7 +438,7 @@ begin
       ) s;
     return jsonb_build_object(
       'ok', true,
-      'conversa', jsonb_build_object('conv', v_c.conv, 'nome', v_c.nome, 'numero', v_c.numero, 'status', v_c.status, 'tem_botao', v_c.tem_botao),
+      'conversa', jsonb_build_object('conv', v_c.conv, 'nome', v_c.nome, 'nome_crm', v_c.nome_crm, 'numero', v_c.numero, 'status', v_c.status, 'tem_botao', v_c.tem_botao),
       'mensagens', v_r,
       'cliente', case when coalesce((b->>'crm')::boolean, true) then suporte.cliente_crm(v_c.numero) end);
   end if;
@@ -506,6 +532,9 @@ begin
   return jsonb_build_object('ok', false, 'erro', 'rota_invalida');
 end
 $fn$;
+
+-- ---------------------------------------------------------------- preenche o nome do CRM nas conversas que já existem
+update suporte.conversas set nome_crm = suporte.nome_crm(numero) where nome_crm is null and numero <> '';
 
 -- ---------------------------------------------------------------- senha do painel
 -- Troque TROQUE_PELO_TOKEN_DO_PAINEL pelo token do painel e rode esta linha (o banco guarda só o hash):
