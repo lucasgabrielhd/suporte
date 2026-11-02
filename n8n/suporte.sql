@@ -20,6 +20,8 @@ create table if not exists suporte.conversas (
 );
 create index if not exists conversas_ultima_idx on suporte.conversas (ultima_em desc);
 alter table suporte.conversas add column if not exists nome_crm text;
+alter table suporte.conversas add column if not exists crm jsonb;
+alter table suporte.conversas add column if not exists crm_em timestamptz;
 
 create table if not exists suporte.mensagens (
   id bigserial primary key,
@@ -144,6 +146,8 @@ begin
 
   update suporte.conversas set nome_crm = suporte.nome_crm(numero)
    where conv = v_conv and numero <> '' and nome_crm is null;
+  update suporte.conversas set crm = suporte.crm_resumo(numero), crm_em = now()
+   where conv = v_conv and numero <> '' and (crm_em is null or crm_em < now() - interval '30 minutes');
 
   for m in select * from jsonb_array_elements(coalesce(b->'msgs', '[]'::jsonb)) loop
     v_id := null;
@@ -279,6 +283,38 @@ exception when others then
 end
 $fn$;
 
+-- ---------------------------------------------------------------- resumo pra lista: é cliente? pedido a caminho? (aba Clientes)
+
+create or replace function suporte.crm_resumo(p_numero text) returns jsonb
+language plpgsql stable as $fn$
+declare
+  v_num text := regexp_replace(coalesce(p_numero, ''), '\D', '', 'g');
+  v_alts text[];
+  v_r jsonb;
+begin
+  if length(v_num) < 12 then return jsonb_build_object('pedidos', 0); end if;
+  v_alts := array[v_num];
+  if length(v_num) = 13 and substr(v_num, 5, 1) = '9' then v_alts := v_alts || (substr(v_num, 1, 4) || substr(v_num, 6)); end if;
+  if length(v_num) = 12 then v_alts := v_alts || (substr(v_num, 1, 4) || '9' || substr(v_num, 5)); end if;
+  select jsonb_build_object(
+           'pedidos', count(*) filter (where p.pago),
+           'ultimo', max(p.paid_at),
+           'situacao', case
+              when bool_or(p.status = 'Em transporte' and p.created_at_yampi > now() - interval '90 days') then 'a_caminho'
+              when bool_or(p.status in ('Faturado', 'Pagamento aprovado') and p.created_at_yampi > now() - interval '60 days') then 'preparando'
+              when count(*) filter (where p.pago) > 0 then 'cliente'
+              when bool_or(p.status = 'Aguardando pagamento' and p.created_at_yampi > now() - interval '7 days') then 'aguardando_pagamento'
+            end)
+    into v_r
+    from public.clientes c
+    join public.pedidos p on p.cliente_id = c.id
+   where c.telefone = any(v_alts) and c.mesclado_em is null;
+  return coalesce(v_r, jsonb_build_object('pedidos', 0));
+exception when others then
+  return jsonb_build_object('pedidos', 0);
+end
+$fn$;
+
 -- ---------------------------------------------------------------- card da cliente (lê o CRM, não escreve nada lá)
 
 create or replace function suporte.cliente_crm(p_numero text) returns jsonb
@@ -355,11 +391,15 @@ begin
   on conflict (aparelho) do update set painel_visto_em = now();
 
   if v_acao = 'convs' then
+    update suporte.conversas set crm = suporte.crm_resumo(numero), crm_em = now()
+     where conv in (select conv from suporte.conversas
+                     where status = 'aberta' and numero <> '' and (crm_em is null or crm_em < now() - interval '3 hours')
+                     order by ultima_em desc limit 15);
     select coalesce(jsonb_agg(jsonb_build_object(
              'conv', c.conv, 'nome', c.nome, 'numero', c.numero, 'ultima_msg', c.ultima_msg,
              'ultima_direcao', c.ultima_direcao, 'ultima_em', c.ultima_em, 'nao_lidas', c.nao_lidas,
-             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde, 'nome_crm', c.nome_crm)
-             order by case when coalesce(b->>'filtro', '') = 'esperando' then c.espera_desde end asc nulls last, c.ultima_em desc), '[]'::jsonb)
+             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde, 'nome_crm', c.nome_crm, 'crm', c.crm)
+             order by case when coalesce(b->>'filtro', '') in ('esperando', 'clientes') then c.espera_desde end asc nulls last, c.ultima_em desc), '[]'::jsonb)
       into v_r
       from (
         select c.*,
@@ -371,7 +411,8 @@ begin
           from suporte.conversas c
          where (coalesce(b->>'filtro', 'abertas') = 'todas'
                 or (coalesce(b->>'filtro', 'abertas') = 'abertas' and c.status = 'aberta')
-                or (b->>'filtro' = 'esperando' and c.status = 'aberta' and c.ultima_direcao = 'in'))
+                or (b->>'filtro' = 'esperando' and c.status = 'aberta' and c.ultima_direcao = 'in')
+                or (b->>'filtro' = 'clientes' and c.status = 'aberta' and coalesce((c.crm->>'pedidos')::int, 0) > 0))
            and (v_busca is null or c.nome ilike '%' || v_busca || '%' or coalesce(c.nome_crm, '') ilike '%' || v_busca || '%' or c.numero like '%' || regexp_replace(v_busca, '\D', '', 'g') || '%' and regexp_replace(v_busca, '\D', '', 'g') <> '')
          order by c.ultima_em desc
          limit 300
@@ -384,7 +425,8 @@ begin
                       'segundos', extract(epoch from now() - a.visto_em)::int, 'dados', a.dados)), '[]'::jsonb)
                       from suporte.aparelhos a where a.aparelho <> '_painel'),
       'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta'),
-      'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in'));
+      'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in'),
+      'clientes_esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and coalesce((crm->>'pedidos')::int, 0) > 0));
   end if;
 
   if v_acao = 'respostas' then
@@ -573,6 +615,7 @@ $fn$;
 
 -- ---------------------------------------------------------------- preenche o nome do CRM nas conversas que já existem
 update suporte.conversas set nome_crm = suporte.nome_crm(numero) where nome_crm is null and numero <> '';
+update suporte.conversas set crm = suporte.crm_resumo(numero), crm_em = now() where status = 'aberta' and numero <> '';
 
 -- ---------------------------------------------------------------- senha do painel
 -- Troque TROQUE_PELO_TOKEN_DO_PAINEL pelo token do painel e rode esta linha (o banco guarda só o hash):
