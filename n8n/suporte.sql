@@ -405,6 +405,7 @@ begin
   end if;
 
   if v_acao = 'resposta_apagar' then
+    if coalesce(b->>'id', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
     delete from suporte.respostas where id = (b->>'id')::bigint;
     return jsonb_build_object('ok', true);
   end if;
@@ -493,12 +494,14 @@ begin
   end if;
 
   if v_acao = 'reenviar' then
+    if coalesce(b->>'id', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
     update suporte.mensagens set status = 'pendente', tentativas = 0, erro = null, atualizado_em = now()
      where id = (b->>'id')::bigint and direcao = 'out' and status in ('falhou', 'sem_notificacao');
     return jsonb_build_object('ok', true);
   end if;
 
   if v_acao = 'cancelar' then
+    if coalesce(b->>'id', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
     update suporte.mensagens set status = 'cancelada', atualizado_em = now()
      where id = (b->>'id')::bigint and direcao = 'out' and status in ('pendente', 'falhou', 'sem_notificacao');
     return jsonb_build_object('ok', true);
@@ -512,6 +515,7 @@ begin
   end if;
 
   if v_acao = 'midia' then
+    if coalesce(b->>'id', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
     select coalesce(jsonb_build_object('mime', d.mime, 'b64', d.dados), '{}'::jsonb) into v_r
       from suporte.midias d where d.id = (b->>'id')::bigint;
     return jsonb_build_object('ok', v_r is not null, 'midia', v_r);

@@ -512,7 +512,7 @@ function renderChat(){
   const ms=[...S.chat.mensagens];
   const ids=new Set(ms.map(m=>m.id));
   S.pend=S.pend.filter(p=>!(p.id&&ids.has(p.id)));
-  for(const p of S.pend)if(p.conv===S.sel)ms.push({id:p.id||'l'+p.l,direcao:'out',tipo:p.foto?'imagem':'texto',texto:p.texto,legenda:p.foto?p.texto:'',localUrl:p.foto,midias:[],autor:S.nome,status:p.st==='erro'?'falhou':'pendente',erro:p.st==='erro'?'não chegou no n8n':'',criado_em:p.em});
+  for(const p of S.pend)if(p.conv===S.sel)ms.push({id:p.id||'l'+p.l,direcao:'out',tipo:p.foto?'imagem':'texto',texto:p.texto,legenda:p.foto?p.texto:'',localUrl:p.foto,midias:[],autor:S.nome,status:p.st==='erro'?'falhou':'pendente',erro:p.st==='erro'?(p.erroMsg||'não chegou no n8n'):'',criado_em:p.em});
   const assin=JSON.stringify(ms.map(m=>[m.id,m.status,(m.midias||[]).map(d=>S.media.has(d.id)?1:0).join('')]));
   if(assin===S.lastIds)return;
   S.lastIds=assin;
@@ -535,8 +535,8 @@ async function carregaMidia(id,tocar){
 document.addEventListener('click',async e=>{
   const a=e.target.closest('[data-aud]');if(a){a.textContent='carregando…';carregaMidia(a.dataset.aud,true);return}
   const z=e.target.closest('[data-zoom]');if(z){$('#zoomimg').src=z.src;$('#zoom').classList.add('on');return}
-  const re=e.target.closest('[data-re]');if(re){try{await api('reenviar',{id:re.dataset.re});toast('Vai tentar de novo');loopChat()}catch(x){toast('Erro')}return}
-  const cx=e.target.closest('[data-cx]');if(cx){try{await api('cancelar',{id:cx.dataset.cx});loopChat()}catch(x){toast('Erro')}return}
+  const re=e.target.closest('[data-re]');if(re){const id=re.dataset.re;if(id.startsWith('l')){const p=S.pend.find(x=>'l'+x.l===id);if(p)envPend(p);return}try{await api('reenviar',{id});toast('Vai tentar de novo');loopChat()}catch(x){toast('Erro')}return}
+  const cx=e.target.closest('[data-cx]');if(cx){const id=cx.dataset.cx;if(id.startsWith('l')){S.pend=S.pend.filter(x=>'l'+x.l!==id);S.lastIds='';renderChat();return}try{await api('cancelar',{id});loopChat()}catch(x){toast('Erro')}return}
   if(!e.target.closest('#qr')&&!e.target.closest('#bqr'))$('#qr')?.classList.remove('on');
 });
 $('#zoom').onclick=()=>$('#zoom').classList.remove('on');
@@ -563,20 +563,24 @@ function carregaFoto(file){
   img.src=url;
 }
 let seq=0;
+async function envPend(p){
+  p.st='env';p.erroMsg='';S.lastIds='';renderChat();
+  try{
+    const j=await api('enviar',p.extra);
+    if(j.ok){p.id=j.id;p.st='ok'}
+    else{p.st='erro';p.erroMsg=j.erro==='sem_numero_pra_foto'?'essa conversa não tem número, foto não sai':j.erro==='foto_grande_demais'?'foto grande demais':(j.erro==='texto_vazio'&&p.extra.midia)?'o banco ainda não foi atualizado pra foto (rode o Atualiza schema suporte no n8n)':(j.erro||'erro');toast('Não enviou: '+p.erroMsg)}
+  }catch(e){p.st='erro';p.erroMsg='não chegou no n8n';toast('Sem conexão com o n8n — tente de novo')}
+  S.lastIds='';renderChat();loopChat();
+}
 async function enviar(){
   const ta=$('#txt');const t=ta.value.trim();const foto=S.foto;
   if((!t&&!foto)||!S.sel)return;
   const p={l:++seq,conv:S.sel,texto:t,em:new Date().toISOString(),st:'env',foto:foto?foto.url:null,idLocal:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random())};
-  S.pend.push(p);ta.value='';ta.style.height='auto';S.stick=true;S.lastIds='';
+  p.extra={conv:p.conv,texto:t,autor:S.nome,idLocal:p.idLocal};
+  if(foto)p.extra.midia={mime:foto.mime,b64:foto.b64};
+  S.pend.push(p);ta.value='';ta.style.height='auto';S.stick=true;
   if(foto){S.foto=null;$('#fprev').classList.remove('on');ta.placeholder='Digite a resposta… (/ pra respostas rápidas)'}
-  renderChat();
-  try{
-    const extra={conv:p.conv,texto:t,autor:S.nome,idLocal:p.idLocal};
-    if(foto)extra.midia={mime:foto.mime,b64:foto.b64};
-    const j=await api('enviar',extra);
-    if(j.ok){p.id=j.id;p.st='ok'}else{p.st='erro';toast('Não enviou: '+(j.erro==='sem_numero_pra_foto'?'conversa sem número':j.erro||''))}
-  }catch(e){p.st='erro';toast('Sem conexão com o n8n — tente de novo')}
-  S.lastIds='';renderChat();loopChat();
+  await envPend(p);
 }
 
 const STP=s=>{s=String(s||'').toLowerCase();if(/entreg|transporte|enviado|faturado|pago|autoriz/.test(s))return'g';if(/cancel|recus|devol|estorn/.test(s))return'r';return'y'};
