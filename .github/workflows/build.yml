@@ -1,0 +1,40 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle)
+          APK="WaSuporte-FC-v${VERSION}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          gh release create "v${VERSION}-build${{ github.run_number }}" "$APK" \
+            --repo "${{ github.repository }}" \
+            --title "WA Suporte FC v${VERSION} (build ${{ github.run_number }})" \
+            --notes "Build automático do commit ${{ github.sha }}" \
+            --latest
