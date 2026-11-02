@@ -1,21 +1,20 @@
 {
-  "name": "WA Suporte FC (app ⇄ painel)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "wa-suporte-in",
+        "authentication": "headerAuth",
         "responseMode": "responseNode",
-        "options": {},
-        "authentication": "headerAuth"
+        "options": {}
       },
-      "id": "eb7aa7ba-60d0-4434-9651-ec06202563b9",
+      "id": "8cd0e8a2-a131-4722-8421-cb9cbec5fa58",
       "name": "App envia (in)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        0
+        1040,
+        -16
       ],
       "webhookId": "601a1db6-a0cd-46fc-ac45-2cbaeaa8bd69",
       "credentials": {
@@ -29,17 +28,17 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "wa-suporte-out",
+        "authentication": "headerAuth",
         "responseMode": "responseNode",
-        "options": {},
-        "authentication": "headerAuth"
+        "options": {}
       },
-      "id": "ea8bc9f8-02b1-4a3e-9a0e-bfb18c8d3ac3",
+      "id": "e7109e4f-1285-4cfd-9d62-7ae2c06ea6c7",
       "name": "App busca (out)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        200
+        1040,
+        176
       ],
       "webhookId": "c88b4c4e-5f3a-4ee7-9639-65ab5fb4e8ec",
       "credentials": {
@@ -58,13 +57,13 @@
           "allowedOrigins": "*"
         }
       },
-      "id": "acfdad18-3b24-456b-9758-1bed44d2bbdd",
+      "id": "fdf890e7-f04a-41eb-a1b0-3fb846ae40ee",
       "name": "Painel (api)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        400
+        1040,
+        384
       ],
       "webhookId": "b49917e3-94f5-49ff-9d0c-dde3347eaef6"
     },
@@ -72,28 +71,28 @@
       "parameters": {
         "jsCode": "let rota = '';\nif ($('App envia (in)').isExecuted) rota = 'in';\nelse if ($('App busca (out)').isExecuted) rota = 'out';\nelse if ($('Painel (api)').isExecuted) rota = 'painel';\nconst req = $input.first().json || {};\nlet body = {};\nlet token = '';\nif (rota === 'in' || rota === 'out') {\n  body = req.body || {};\n} else if (rota === 'painel') {\n  const raw = req.body && typeof req.body.d === 'string' ? req.body.d : '{}';\n  try { body = JSON.parse(raw); } catch (e) { body = {}; }\n  token = String(body.token || '');\n  delete body.token;\n}\nconst json = JSON.stringify({ rota, token, body });\nconst b64 = typeof Buffer !== 'undefined'\n  ? Buffer.from(json, 'utf8').toString('base64')\n  : btoa(unescape(encodeURIComponent(json)));\nreturn [{ json: { rota, sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];"
       },
-      "id": "26891c68-7db1-46c4-872e-c5c5c4b273e0",
+      "id": "63751f31-8e64-424e-ac29-a615182f96f3",
       "name": "Monta SQL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        260,
-        200
+        1296,
+        176
       ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "={{ $json.sql }}",
+        "query": "{{ $json.sql }}",
         "options": {}
       },
-      "id": "62038819-dc8a-4907-94b7-435ac607ef00",
+      "id": "63cff8cf-7f82-43e6-9d0e-6a1a36096ca8",
       "name": "Postgres suporte.api",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        500,
-        200
+        1536,
+        176
       ],
       "credentials": {
         "postgres": {
@@ -108,13 +107,13 @@
         "responseBody": "={{ JSON.stringify($json.r) }}",
         "options": {}
       },
-      "id": "ed45978a-da80-4d4d-8a3a-5dd3ff13b6ba",
+      "id": "9cb80c84-9a0c-4636-98a8-1b2a89312d18",
       "name": "Responde",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1880,
-        200
+        2912,
+        176
       ]
     },
     {
@@ -123,19 +122,18 @@
           "interval": [
             {
               "field": "hours",
-              "hoursInterval": 1,
               "triggerAtMinute": 17
             }
           ]
         }
       },
-      "id": "78216429-6996-43a9-b377-0ec0e0ad3b84",
+      "id": "fa23a76a-88f2-48cd-8cf2-a52d920f8e82",
       "name": "A cada hora",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        0,
-        640
+        1040,
+        624
       ]
     },
     {
@@ -144,13 +142,13 @@
         "query": "select suporte.api('{\"rota\":\"limpar\"}'::jsonb) as r",
         "options": {}
       },
-      "id": "14a9b0f6-f625-4416-908f-3f35274c16b4",
-      "name": "Apaga mais de 7 dias",
+      "id": "f0326aad-3205-4fa2-969d-9a0a72e9b9d8",
+      "name": "Limpeza (mídia 7d, texto 1 ano)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        260,
-        640
+        1296,
+        624
       ],
       "credentials": {
         "postgres": {
@@ -161,17 +159,17 @@
     },
     {
       "parameters": {
-        "content": "## WA Suporte FC\nApp do celular do suporte ⇄ painel HTML.\n\n- **wa-suporte-in**: app manda mensagens da cliente e confirmações de envio (credencial Header Auth *WA Suporte App*, header `X-WS-Token`)\n- **wa-suporte-out**: app busca o que a atendente digitou (mesma credencial)\n- **wa-suporte-painel**: painel (token conferido no Postgres, tabela `suporte.config`)\n\nToda a regra está nas funções do schema `suporte` (arquivo `n8n/suporte.sql` do repo). Mensagens, fotos e áudios somem com 7 dias.\n\n**Rastreio ao vivo:** quando o painel pede `rastreio`, o Postgres devolve o que consultar → Frenet (credencial *Frenet Face Clean*) → salva no cache (20 min) → responde.\n\n**Ocorrências:** o painel pede `ocorrencias` com os códigos de rastreio da cliente → lê as chaves `painel:*:<código>` do Painel de Ocorrências no Redis (só leitura).",
+        "content": "## WA Suporte FC\nApp do celular do suporte ⇄ painel HTML.\n\n- **wa-suporte-in**: app manda mensagens da cliente e confirmações de envio (credencial Header Auth *WA Suporte App*, header `X-WS-Token`)\n- **wa-suporte-out**: app busca o que a atendente digitou (mesma credencial)\n- **wa-suporte-painel**: painel (token conferido no Postgres, tabela `suporte.config`)\n\nToda a regra está nas funções do schema `suporte` (arquivo `n8n/suporte.sql` do repo). Fotos e áudios somem com 7 dias; o texto das conversas fica 1 ano.\n\n**Rastreio ao vivo:** quando o painel pede `rastreio`, o Postgres devolve o que consultar → Frenet (credencial *Frenet Face Clean*) → salva no cache (20 min) → responde.\n\n**Ocorrências:** o painel pede `ocorrencias` com os códigos de rastreio da cliente → lê as chaves `painel:*:<código>` do Painel de Ocorrências no Redis (só leitura).",
         "height": 380,
         "width": 420
       },
-      "id": "045a6928-29de-4ea8-838a-b0f6b7251235",
+      "id": "55252918-2d94-4900-b732-4338a2f31349",
       "name": "Nota",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -20,
-        -360
+        1008,
+        -384
       ]
     },
     {
@@ -199,13 +197,13 @@
         },
         "options": {}
       },
-      "id": "32e038f4-fe17-47ed-812d-ffa58cbeb602",
+      "id": "ce51faa8-b902-4064-bbda-a4ec232bd807",
       "name": "Consulta Frenet?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        740,
-        200
+        1776,
+        176
       ]
     },
     {
@@ -218,56 +216,56 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.r.consulta) }}",
         "options": {
-          "timeout": 20000,
           "response": {
             "response": {
               "neverError": true
             }
-          }
+          },
+          "timeout": 20000
         }
       },
-      "id": "b8746075-4c35-48b3-81b0-91387e85a578",
+      "id": "46b08813-85c2-4acc-b8e1-01277dda376f",
       "name": "Frenet rastreio",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        980,
-        60
+        2016,
+        48
       ],
-      "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
           "id": "N1PYeH534gvjLZrk",
           "name": "Frenet Face Clean"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const alvo = $('Postgres suporte.api').first().json.r || {};\nconst resp = $input.first().json || {};\nconst toIso = (s) => {\n  const t = String(s || '').trim();\n  const m = t.match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})[ T]?(\\d{2}:\\d{2}(?::\\d{2})?)?/);\n  if (m) return `${m[3]}-${m[2]}-${m[1]}T${m[4] || '00:00'}-03:00`;\n  return t;\n};\nconst lista = Array.isArray(resp.TrackingEvents) ? resp.TrackingEvents : [];\nconst eventos = lista.map(e => ({\n  quando: toIso(e.EventDateTime),\n  local: e.EventLocation || '',\n  descricao: e.EventDescription || '',\n  tipo: e.EventType || ''\n})).sort((a, b) => (Date.parse(b.quando) || 0) - (Date.parse(a.quando) || 0)).slice(0, 20);\nlet erro = resp.ErrorMessage || '';\nif (!erro && resp.error) erro = resp.error.message || String(resp.error);\nif (!erro && !eventos.length) erro = 'sem_eventos';\nconst dados = { ok: eventos.length > 0, erro, url: resp.TrackingUrl || '', servico: resp.ServiceDescrition || '', eventos };\nconst json = JSON.stringify({ rota: 'rastreio_salvar', token: '', body: { codigo: alvo.codigo, dados } });\nconst b64 = typeof Buffer !== 'undefined'\n  ? Buffer.from(json, 'utf8').toString('base64')\n  : btoa(unescape(encodeURIComponent(json)));\nreturn [{ json: { sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];"
       },
-      "id": "5c8b544d-93d6-4eda-9105-4af8f795efaa",
+      "id": "b1e2fc13-6c57-4ebe-8bb1-31b60d8f9484",
       "name": "Monta SQL rastreio",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        60
+        2240,
+        48
       ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "={{ $json.sql }}",
+        "query": "{{ $json.sql }}",
         "options": {}
       },
-      "id": "447d46c8-c609-4995-b9ea-1f06cb2d6210",
+      "id": "54759831-f438-4067-8804-e6f4f2e3dd20",
       "name": "Salva rastreio",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1420,
-        60
+        2448,
+        48
       ],
       "credentials": {
         "postgres": {
@@ -301,62 +299,61 @@
         },
         "options": {}
       },
-      "id": "ecc94b4f-21d6-44e3-a13e-81c0e6b07ecf",
+      "id": "57b6c76a-1451-460e-b333-0f6807578754",
       "name": "Busca ocorrências?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        980,
-        340
+        2016,
+        320
       ]
     },
     {
       "parameters": {
         "jsCode": "const r0 = $input.first().json.r || {};\nreturn (r0.ocorr_codigos || []).map(codigo => ({ json: { codigo } }));"
       },
-      "id": "89a75130-f540-4ff6-9cdb-fc2376354fac",
+      "id": "16f4f2a6-53b1-40cb-8526-99d6fe8e58f2",
       "name": "Separa códigos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1200,
-        320
+        2240,
+        304
       ]
     },
     {
       "parameters": {
         "operation": "keys",
-        "keyPattern": "=painel:*:{{ $json.codigo }}",
-        "getValues": true
+        "keyPattern": "=painel:*:{{ $json.codigo }}"
       },
-      "id": "3acd821d-a26e-40cb-9b9f-98726ac4d599",
+      "id": "13b81a0d-7b01-4020-9e05-125c6b0320ce",
       "name": "Ocorrências (Redis)",
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        1420,
-        320
+        2448,
+        304
       ],
       "alwaysOutputData": true,
-      "onError": "continueRegularOutput",
       "credentials": {
         "redis": {
           "id": "MYdvEMvDAeJ4w9WK",
           "name": "Redis account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
         "jsCode": "const r0 = $('Postgres suporte.api').first().json.r || {};\nconst codigos = r0.ocorr_codigos || [];\nconst objs = $input.all().map(i => i.json || {});\nconst parse = (v) => { if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch (e) { return v; } };\nconst ocorrencias = [];\nfor (const codigo of codigos) {\n  const registros = {};\n  for (const o of objs) {\n    for (const [k, v] of Object.entries(o)) {\n      if (k.startsWith('painel:') && k.endsWith(':' + codigo)) registros[k.slice(7, -(codigo.length + 1))] = parse(v);\n    }\n  }\n  if (Object.keys(registros).length) ocorrencias.push({ codigo, registros });\n}\nreturn [{ json: { r: { ok: true, ocorrencias } } }];"
       },
-      "id": "e29b8bfe-89ad-4e89-918a-5bfe70af1c18",
+      "id": "caf31694-3af0-4c90-904d-ba144bdee37c",
       "name": "Junta ocorrências",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1640,
-        320
+        2672,
+        304
       ]
     }
   ],
@@ -420,7 +417,7 @@
       "main": [
         [
           {
-            "node": "Apaga mais de 7 dias",
+            "node": "Limpeza (mídia 7d, texto 1 ano)",
             "type": "main",
             "index": 0
           }
@@ -530,15 +527,8 @@
       ]
     }
   },
-  "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "saveDataSuccessExecution": "none",
-    "saveDataErrorExecution": "all",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromSameOwner",
-    "timezone": "America/Fortaleza"
-  },
   "pinData": {},
-  "tags": []
+  "meta": {
+    "instanceId": "967e63deafe129033873f542bcb5e171fe71347f6bf9b043549484a2c67a4618"
+  }
 }
