@@ -50,9 +50,9 @@ input,textarea{font:inherit;color:var(--txt)}
 .chat{display:flex;flex-direction:column;min-height:0;background:var(--bg)}
 .chead{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line);min-height:58px}
 .chead .nm{font-weight:650}
-.chead .num{font-size:12px;color:var(--mut)}
+.chead .num{font-size:12px;color:var(--mut);white-space:nowrap}
 .chead .sp{flex:1}
-.btn{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:6px 12px;font-size:13px}
+.btn{white-space:nowrap;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:6px 12px;font-size:13px}
 .btn:hover{background:var(--hover)}
 .btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
 .btn.pri:hover{background:var(--pri2)}
@@ -277,7 +277,7 @@ function abrir(conv){
   $('#chat').innerHTML=`<div class="chead"><button class="icon back" id="voltar">←</button><div class="av" style="background:${corDe(conv)};flex-basis:36px;height:36px">${esc(ini(c?.nome||''))}</div><div><div class="nm">${esc(c?.nome||'')}</div><div class="num" id="hnum">${esc(fone(c?.numero))}</div></div><span class="sp"></span><button class="btn sm" id="copiar" title="Copiar número">📋</button><button class="btn sm" id="resolver"></button><button class="btn sm" id="vcrm" title="Ficha da cliente">👤</button></div>
   <div class="chatwrap"><div id="bn"></div><div class="msgs" id="msgs"><div class="empty">Carregando…</div></div>
   <div class="qr" id="qr"></div>
-  <div class="comp"><button class="icon" id="bqr" title="Respostas rápidas (ou digite /)">⚡</button><textarea id="txt" rows="1" placeholder="Digite a resposta… (Enter envia, Shift+Enter quebra linha)"></textarea><button class="btn pri" id="env">Enviar</button></div></div>`;
+  <div class="comp"><button class="icon" id="bqr" title="Respostas rápidas (ou digite /)">⚡</button><textarea id="txt" rows="1" placeholder="Digite a resposta… (/ pra respostas rápidas)"></textarea><button class="btn pri" id="env">Enviar</button></div></div>`;
   $('#voltar').onclick=()=>{$('#main').classList.remove('open','crmon');S.sel=null;renderLista()};
   $('#copiar').onclick=()=>{const n=S.chat?.conversa?.numero||c?.numero;if(n){navigator.clipboard?.writeText(n);toast('Número copiado')}else toast('Sem número')};
   $('#resolver').onclick=async()=>{const st=S.chat?.conversa?.status==='resolvida'?'aberta':'resolvida';try{await api('status',{conv,status:st});toast(st==='resolvida'?'Marcada como resolvida':'Reaberta');if(S.chat)S.chat.conversa.status=st;pintaResolver();loopConvs(true)}catch(e){toast('Erro: '+e.message)}};
