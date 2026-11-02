@@ -1,0 +1,257 @@
+{
+  "name": "WA Suporte FC (app ⇄ painel)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-suporte-in",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "eb7aa7ba-60d0-4434-9651-ec06202563b9",
+      "name": "App envia (in)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "601a1db6-a0cd-46fc-ac45-2cbaeaa8bd69",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WA Suporte App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-suporte-out",
+        "responseMode": "responseNode",
+        "options": {},
+        "authentication": "headerAuth"
+      },
+      "id": "ea8bc9f8-02b1-4a3e-9a0e-bfb18c8d3ac3",
+      "name": "App busca (out)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "c88b4c4e-5f3a-4ee7-9639-65ab5fb4e8ec",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "WA Suporte App"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa-suporte-painel",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://sites-web.sdrs1j.easypanel.host"
+        }
+      },
+      "id": "acfdad18-3b24-456b-9758-1bed44d2bbdd",
+      "name": "Painel (api)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "b49917e3-94f5-49ff-9d0c-dde3347eaef6"
+    },
+    {
+      "parameters": {
+        "jsCode": "let rota = '';\nif ($('App envia (in)').isExecuted) rota = 'in';\nelse if ($('App busca (out)').isExecuted) rota = 'out';\nelse if ($('Painel (api)').isExecuted) rota = 'painel';\nconst req = $input.first().json || {};\nlet body = {};\nlet token = '';\nif (rota === 'in' || rota === 'out') {\n  body = req.body || {};\n} else if (rota === 'painel') {\n  const raw = req.body && typeof req.body.d === 'string' ? req.body.d : '{}';\n  try { body = JSON.parse(raw); } catch (e) { body = {}; }\n  token = String(body.token || '');\n  delete body.token;\n}\nconst json = JSON.stringify({ rota, token, body });\nconst b64 = typeof Buffer !== 'undefined'\n  ? Buffer.from(json, 'utf8').toString('base64')\n  : btoa(unescape(encodeURIComponent(json)));\nreturn [{ json: { rota, sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];"
+      },
+      "id": "26891c68-7db1-46c4-872e-c5c5c4b273e0",
+      "name": "Monta SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}",
+        "options": {}
+      },
+      "id": "62038819-dc8a-4907-94b7-435ac607ef00",
+      "name": "Postgres suporte.api",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        500,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XLnzyJR4A4LD14G6",
+          "name": "CRM Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.r) }}",
+        "options": {}
+      },
+      "id": "ed45978a-da80-4d4d-8a3a-5dd3ff13b6ba",
+      "name": "Responde",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        740,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 17
+            }
+          ]
+        }
+      },
+      "id": "78216429-6996-43a9-b377-0ec0e0ad3b84",
+      "name": "A cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select suporte.api('{\"rota\":\"limpar\"}'::jsonb) as r",
+        "options": {}
+      },
+      "id": "14a9b0f6-f625-4416-908f-3f35274c16b4",
+      "name": "Apaga mais de 7 dias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        260,
+        640
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XLnzyJR4A4LD14G6",
+          "name": "CRM Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## WA Suporte FC\nApp do celular do suporte ⇄ painel HTML.\n\n- **wa-suporte-in**: app manda mensagens da cliente e confirmações de envio (credencial Header Auth *WA Suporte App*, header `X-WS-Token`)\n- **wa-suporte-out**: app busca o que a atendente digitou (mesma credencial)\n- **wa-suporte-painel**: painel (token conferido no Postgres, tabela `suporte.config`)\n\nToda a regra está nas funções do schema `suporte` (arquivo `n8n/suporte.sql` do repo). Mensagens, fotos e áudios somem com 7 dias.",
+        "height": 300,
+        "width": 420
+      },
+      "id": "045a6928-29de-4ea8-838a-b0f6b7251235",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -360
+      ]
+    }
+  ],
+  "connections": {
+    "App envia (in)": {
+      "main": [
+        [
+          {
+            "node": "Monta SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "App busca (out)": {
+      "main": [
+        [
+          {
+            "node": "Monta SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Painel (api)": {
+      "main": [
+        [
+          {
+            "node": "Monta SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta SQL": {
+      "main": [
+        [
+          {
+            "node": "Postgres suporte.api",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres suporte.api": {
+      "main": [
+        [
+          {
+            "node": "Responde",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada hora": {
+      "main": [
+        [
+          {
+            "node": "Apaga mais de 7 dias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "America/Fortaleza"
+  },
+  "pinData": {},
+  "tags": []
+}

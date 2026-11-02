@@ -1,0 +1,410 @@
+-- WA Suporte FC — schema "suporte" no Postgres do CRM (banco crm).
+-- Só cria coisas novas: não altera nenhuma tabela existente do CRM (public.*), só lê clientes/pedidos pro card da cliente.
+-- Pode rodar de novo quantas vezes quiser (idempotente).
+-- Retenção: mensagens, fotos e áudios com mais de 7 dias são apagados pela rota 'limpar' (o fluxo n8n chama de hora em hora).
+
+create schema if not exists suporte;
+
+create table if not exists suporte.conversas (
+  conv text primary key,
+  aparelho text not null default '',
+  nome text not null default '',
+  numero text not null default '',
+  ultima_msg text not null default '',
+  ultima_direcao text not null default 'in',
+  ultima_em timestamptz not null default now(),
+  nao_lidas int not null default 0,
+  status text not null default 'aberta',
+  tem_botao boolean not null default true,
+  criado_em timestamptz not null default now()
+);
+create index if not exists conversas_ultima_idx on suporte.conversas (ultima_em desc);
+
+create table if not exists suporte.mensagens (
+  id bigserial primary key,
+  conv text not null references suporte.conversas(conv) on delete cascade on update cascade,
+  direcao text not null,
+  tipo text not null default 'texto',
+  texto text not null default '',
+  transcricao text,
+  legenda text,
+  duracao int,
+  evento text unique,
+  status text not null default 'recebida',
+  erro text,
+  autor text,
+  tentativas int not null default 0,
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now(),
+  enviado_em timestamptz
+);
+create index if not exists mensagens_conv_idx on suporte.mensagens (conv, criado_em, id);
+create index if not exists mensagens_saida_idx on suporte.mensagens (status, id) where direcao = 'out';
+create index if not exists mensagens_criado_idx on suporte.mensagens (criado_em);
+
+create table if not exists suporte.midias (
+  id bigserial primary key,
+  mensagem_id bigint not null references suporte.mensagens(id) on delete cascade,
+  mime text not null,
+  dados text not null,
+  criado_em timestamptz not null default now()
+);
+create index if not exists midias_msg_idx on suporte.midias (mensagem_id);
+
+create table if not exists suporte.config (
+  chave text primary key,
+  valor text not null
+);
+
+create table if not exists suporte.aparelhos (
+  aparelho text primary key,
+  dados jsonb not null default '{}'::jsonb,
+  visto_em timestamptz,
+  painel_visto_em timestamptz
+);
+
+-- ---------------------------------------------------------------- entrada (app → painel)
+
+create or replace function suporte.r_in(b jsonb) returns jsonb
+language plpgsql as $fn$
+declare
+  v_tipo text := coalesce(b->>'tipo', 'msgs');
+  v_ap text := coalesce(b->>'aparelho', '');
+  v_conv text := coalesce(b->>'conv', '');
+  v_numero text := regexp_replace(coalesce(b->>'numero', ''), '\D', '', 'g');
+  v_antiga text;
+  m jsonb;
+  md jsonb;
+  ak jsonb;
+  v_id bigint;
+  v_novas int := 0;
+  v_resumo text := '';
+begin
+  if v_tipo = 'ack' then
+    for ak in select * from jsonb_array_elements(coalesce(b->'acks', '[]'::jsonb)) loop
+      if coalesce(ak->>'id', '') ~ '^\d+$' then
+        update suporte.mensagens
+           set status = coalesce(nullif(ak->>'status', ''), 'falhou'),
+               erro = nullif(ak->>'erro', ''),
+               enviado_em = case when ak->>'status' = 'enviado' then coalesce(enviado_em, now()) else enviado_em end,
+               atualizado_em = now()
+         where id = (ak->>'id')::bigint and direcao = 'out' and status <> 'enviado';
+      end if;
+    end loop;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_tipo <> 'msgs' or v_conv = '' then
+    return jsonb_build_object('ok', false, 'erro', 'payload_invalido');
+  end if;
+
+  -- contato salvo chega como "nome:Fulana"; se depois descobrir que é a mesma conversa pelo número, junta na conversa antiga
+  if v_numero <> '' then
+    select conv into v_antiga from suporte.conversas where numero = v_numero and conv <> v_conv and aparelho = v_ap order by ultima_em desc limit 1;
+    if v_antiga is not null and not exists (select 1 from suporte.conversas where conv = v_conv) then
+      update suporte.conversas set conv = v_conv where conv = v_antiga;
+    end if;
+  end if;
+
+  insert into suporte.conversas as c (conv, aparelho, nome, numero)
+  values (v_conv, v_ap, coalesce(b->>'nome', ''), v_numero)
+  on conflict (conv) do update
+     set aparelho = excluded.aparelho,
+         nome = case when excluded.nome <> '' then excluded.nome else c.nome end,
+         numero = case when excluded.numero <> '' then excluded.numero else c.numero end,
+         tem_botao = true;
+
+  for m in select * from jsonb_array_elements(coalesce(b->'msgs', '[]'::jsonb)) loop
+    v_id := null;
+    insert into suporte.mensagens (conv, direcao, tipo, texto, transcricao, legenda, duracao, evento, erro, criado_em)
+    values (
+      v_conv, 'in',
+      coalesce(nullif(m->>'tipo', ''), 'texto'),
+      coalesce(m->>'texto', ''),
+      nullif(m->>'transcricao', ''),
+      nullif(m->>'legenda', ''),
+      case when coalesce(m->>'duracao', '') ~ '^\d+$' then (m->>'duracao')::int end,
+      nullif(m->>'id', ''),
+      nullif(m->>'erro', ''),
+      case when coalesce(m->>'t', '') ~ '^\d{12,14}$' then least(to_timestamp((m->>'t')::bigint / 1000.0), now()) else now() end
+    )
+    on conflict (evento) do nothing
+    returning id into v_id;
+
+    if v_id is not null then
+      v_novas := v_novas + 1;
+      for md in select * from jsonb_array_elements(coalesce(m->'midias', '[]'::jsonb)) loop
+        if coalesce(md->>'b64', '') <> '' then
+          insert into suporte.midias (mensagem_id, mime, dados) values (v_id, coalesce(nullif(md->>'mime', ''), 'application/octet-stream'), md->>'b64');
+        end if;
+      end loop;
+      v_resumo := case m->>'tipo'
+        when 'audio' then '🎤 ' || coalesce(nullif(m->>'transcricao', ''), 'Áudio')
+        when 'imagem' then '📷 ' || coalesce(nullif(m->>'legenda', ''), 'Foto')
+        else coalesce(m->>'texto', '') end;
+    end if;
+  end loop;
+
+  if v_novas > 0 then
+    update suporte.conversas
+       set ultima_msg = left(v_resumo, 200), ultima_direcao = 'in', ultima_em = now(),
+           nao_lidas = nao_lidas + v_novas, status = 'aberta'
+     where conv = v_conv;
+  end if;
+
+  return jsonb_build_object('ok', true, 'novas', v_novas);
+end
+$fn$;
+
+-- ---------------------------------------------------------------- saída (painel → app)
+
+create or replace function suporte.r_out(b jsonb) returns jsonb
+language plpgsql as $fn$
+declare
+  v_ap text := coalesce(b->>'aparelho', '');
+  v_botoes text[];
+  v_itens jsonb;
+  v_rapido boolean;
+begin
+  insert into suporte.aparelhos (aparelho, dados, visto_em)
+  values (v_ap, coalesce(b->'status', '{}'::jsonb), now())
+  on conflict (aparelho) do update set dados = excluded.dados, visto_em = now();
+
+  if jsonb_typeof(b->'botoes') = 'array' then
+    v_botoes := array(select jsonb_array_elements_text(b->'botoes'));
+    update suporte.conversas
+       set tem_botao = (conv = any(v_botoes))
+     where aparelho = v_ap and tem_botao is distinct from (conv = any(v_botoes));
+  end if;
+
+  update suporte.mensagens m
+     set status = 'falhou', erro = 'celular_nao_confirmou', atualizado_em = now()
+    from suporte.conversas c
+   where c.conv = m.conv and c.aparelho = v_ap and m.direcao = 'out'
+     and m.status = 'enviando' and m.tentativas >= 5 and m.atualizado_em < now() - interval '90 seconds';
+
+  with alvo as (
+    select m.id
+      from suporte.mensagens m
+      join suporte.conversas c on c.conv = m.conv
+     where m.direcao = 'out' and c.aparelho = v_ap
+       and (m.status = 'pendente' or (m.status = 'enviando' and m.atualizado_em < now() - interval '90 seconds'))
+     order by m.id
+     limit 10
+       for update of m skip locked
+  ), upd as (
+    update suporte.mensagens m
+       set status = 'enviando', tentativas = m.tentativas + 1, atualizado_em = now()
+      from alvo
+     where m.id = alvo.id
+    returning m.id, m.conv, m.texto
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('id', upd.id::text, 'conv', upd.conv, 'texto', upd.texto, 'numero', c.numero, 'nome', c.nome) order by upd.id), '[]'::jsonb)
+    into v_itens
+    from upd join suporte.conversas c on c.conv = upd.conv;
+
+  select exists(select 1 from suporte.aparelhos where aparelho = '_painel' and painel_visto_em > now() - interval '10 minutes') into v_rapido;
+
+  return jsonb_build_object('ok', true, 'itens', v_itens, 'rapido', v_rapido);
+end
+$fn$;
+
+-- ---------------------------------------------------------------- card da cliente (lê o CRM, não escreve nada lá)
+
+create or replace function suporte.cliente_crm(p_numero text) returns jsonb
+language plpgsql as $fn$
+declare
+  v_num text := regexp_replace(coalesce(p_numero, ''), '\D', '', 'g');
+  v_alts text[];
+  v_cli jsonb;
+  v_id bigint;
+  v_ped jsonb;
+begin
+  if length(v_num) < 12 then return null; end if;
+  v_alts := array[v_num];
+  if length(v_num) = 13 and substr(v_num, 5, 1) = '9' then v_alts := v_alts || (substr(v_num, 1, 4) || substr(v_num, 6)); end if;
+  if length(v_num) = 12 then v_alts := v_alts || (substr(v_num, 1, 4) || '9' || substr(v_num, 5)); end if;
+
+  select c.id, jsonb_build_object(
+           'id', c.id, 'nome', c.nome, 'telefone', c.telefone, 'email', c.email::text,
+           'cidade', c.cidade, 'uf', c.uf, 'pedidos', c.pedidos_count, 'ltv', c.ltv,
+           'rfm', c.rfm_classe, 'primeiro_pedido', c.primeiro_pedido_at, 'ultimo_pedido', c.ultimo_pedido_at,
+           'optout', c.optout, 'ficha', c.crm_ficha)
+    into v_id, v_cli
+    from public.clientes c
+   where c.telefone = any(v_alts) and c.mesclado_em is null
+   order by c.ultimo_pedido_at desc nulls last
+   limit 1;
+
+  if v_id is null then return null; end if;
+
+  select coalesce(jsonb_agg(x order by x->>'criado' desc), '[]'::jsonb) into v_ped
+    from (
+      select jsonb_build_object(
+               'numero', p.numero, 'status', p.status, 'pago', p.pago, 'valor', p.valor_total,
+               'metodo', p.metodo_pagamento, 'criado', p.created_at_yampi, 'pago_em', p.paid_at,
+               'enviado', p.enviado_at, 'entregue', p.entregue_at, 'previsao', p.previsao_entrega,
+               'transportadora', p.transportadora, 'rastreio', p.payload->>'track_code', 'rastreio_url', p.payload->>'track_url',
+               'itens', (select coalesce(jsonb_agg(jsonb_build_object('t', i->>'title', 'q', i->>'qty')), '[]'::jsonb) from jsonb_array_elements(coalesce(p.itens, '[]'::jsonb)) i)
+             ) x
+        from public.pedidos p
+       where p.cliente_id = v_id
+       order by p.created_at_yampi desc nulls last
+       limit 5
+    ) s;
+
+  return v_cli || jsonb_build_object('ultimos_pedidos', v_ped);
+exception when others then
+  return jsonb_build_object('erro', 'crm_indisponivel: ' || sqlerrm);
+end
+$fn$;
+
+-- ---------------------------------------------------------------- painel
+
+create or replace function suporte.r_painel(b jsonb) returns jsonb
+language plpgsql as $fn$
+declare
+  v_acao text := coalesce(b->>'acao', 'convs');
+  v_conv text := coalesce(b->>'conv', '');
+  v_busca text := nullif(trim(coalesce(b->>'busca', '')), '');
+  v_txt text;
+  v_id bigint;
+  v_r jsonb;
+  v_c record;
+begin
+  insert into suporte.aparelhos (aparelho, painel_visto_em) values ('_painel', now())
+  on conflict (aparelho) do update set painel_visto_em = now();
+
+  if v_acao = 'convs' then
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'conv', c.conv, 'nome', c.nome, 'numero', c.numero, 'ultima_msg', c.ultima_msg,
+             'ultima_direcao', c.ultima_direcao, 'ultima_em', c.ultima_em, 'nao_lidas', c.nao_lidas,
+             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho) order by c.ultima_em desc), '[]'::jsonb)
+      into v_r
+      from (
+        select * from suporte.conversas c
+         where (coalesce(b->>'filtro', 'abertas') = 'todas' or c.status = 'aberta')
+           and (v_busca is null or c.nome ilike '%' || v_busca || '%' or c.numero like '%' || regexp_replace(v_busca, '\D', '', 'g') || '%' and regexp_replace(v_busca, '\D', '', 'g') <> '')
+         order by c.ultima_em desc
+         limit 300
+      ) c;
+    return jsonb_build_object(
+      'ok', true,
+      'convs', v_r,
+      'agora', now(),
+      'aparelhos', (select coalesce(jsonb_agg(jsonb_build_object('aparelho', a.aparelho, 'visto_em', a.visto_em,
+                      'segundos', extract(epoch from now() - a.visto_em)::int, 'dados', a.dados)), '[]'::jsonb)
+                      from suporte.aparelhos a where a.aparelho <> '_painel'),
+      'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta'));
+  end if;
+
+  if v_acao = 'chat' then
+    select * into v_c from suporte.conversas where conv = v_conv;
+    if not found then return jsonb_build_object('ok', false, 'erro', 'conversa_nao_encontrada'); end if;
+    if coalesce((b->>'ler')::boolean, false) and v_c.nao_lidas > 0 then
+      update suporte.conversas set nao_lidas = 0 where conv = v_conv;
+    end if;
+    select coalesce(jsonb_agg(x order by (x->>'criado_em')::timestamptz, (x->>'id')::bigint), '[]'::jsonb) into v_r
+      from (
+        select jsonb_build_object(
+                 'id', m.id::text, 'direcao', m.direcao, 'tipo', m.tipo, 'texto', m.texto, 'transcricao', m.transcricao,
+                 'legenda', m.legenda, 'duracao', m.duracao, 'status', m.status, 'erro', m.erro, 'autor', m.autor,
+                 'criado_em', m.criado_em, 'enviado_em', m.enviado_em,
+                 'midias', (select coalesce(jsonb_agg(jsonb_build_object('id', d.id::text, 'mime', d.mime) order by d.id), '[]'::jsonb) from suporte.midias d where d.mensagem_id = m.id)
+               ) x
+          from (select * from suporte.mensagens where conv = v_conv order by criado_em desc, id desc limit 400) m
+      ) s;
+    return jsonb_build_object(
+      'ok', true,
+      'conversa', jsonb_build_object('conv', v_c.conv, 'nome', v_c.nome, 'numero', v_c.numero, 'status', v_c.status, 'tem_botao', v_c.tem_botao),
+      'mensagens', v_r,
+      'cliente', case when coalesce((b->>'crm')::boolean, true) then suporte.cliente_crm(v_c.numero) end);
+  end if;
+
+  if v_acao = 'enviar' then
+    v_txt := trim(coalesce(b->>'texto', ''));
+    if v_txt = '' then return jsonb_build_object('ok', false, 'erro', 'texto_vazio'); end if;
+    if length(v_txt) > 4000 then return jsonb_build_object('ok', false, 'erro', 'texto_grande_demais'); end if;
+    if not exists (select 1 from suporte.conversas where conv = v_conv) then return jsonb_build_object('ok', false, 'erro', 'conversa_nao_encontrada'); end if;
+    insert into suporte.mensagens (conv, direcao, tipo, texto, status, autor, evento)
+    values (v_conv, 'out', 'texto', v_txt, 'pendente', nullif(b->>'autor', ''), nullif(b->>'idLocal', ''))
+    on conflict (evento) do nothing
+    returning id into v_id;
+    if v_id is null then
+      select id into v_id from suporte.mensagens where evento = b->>'idLocal';
+    else
+      update suporte.conversas set ultima_msg = left(v_txt, 200), ultima_direcao = 'out', ultima_em = now(), nao_lidas = 0 where conv = v_conv;
+    end if;
+    return jsonb_build_object('ok', true, 'id', v_id::text);
+  end if;
+
+  if v_acao = 'reenviar' then
+    update suporte.mensagens set status = 'pendente', tentativas = 0, erro = null, atualizado_em = now()
+     where id = (b->>'id')::bigint and direcao = 'out' and status in ('falhou', 'sem_notificacao');
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'cancelar' then
+    update suporte.mensagens set status = 'cancelada', atualizado_em = now()
+     where id = (b->>'id')::bigint and direcao = 'out' and status in ('pendente', 'falhou', 'sem_notificacao');
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'status' then
+    update suporte.conversas set status = case when b->>'status' = 'resolvida' then 'resolvida' else 'aberta' end,
+           nao_lidas = case when b->>'status' = 'resolvida' then 0 else nao_lidas end
+     where conv = v_conv;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'midia' then
+    select coalesce(jsonb_build_object('mime', d.mime, 'b64', d.dados), '{}'::jsonb) into v_r
+      from suporte.midias d where d.id = (b->>'id')::bigint;
+    return jsonb_build_object('ok', v_r is not null, 'midia', v_r);
+  end if;
+
+  return jsonb_build_object('ok', false, 'erro', 'acao_invalida');
+end
+$fn$;
+
+-- ---------------------------------------------------------------- limpeza (7 dias)
+
+create or replace function suporte.r_limpar() returns jsonb
+language plpgsql as $fn$
+declare v_m int; v_c int;
+begin
+  delete from suporte.mensagens where criado_em < now() - interval '7 days';
+  get diagnostics v_m = row_count;
+  delete from suporte.conversas c
+   where c.ultima_em < now() - interval '7 days'
+     and not exists (select 1 from suporte.mensagens m where m.conv = c.conv);
+  get diagnostics v_c = row_count;
+  return jsonb_build_object('ok', true, 'mensagens_apagadas', v_m, 'conversas_apagadas', v_c);
+end
+$fn$;
+
+-- ---------------------------------------------------------------- porta única chamada pelo n8n
+
+create or replace function suporte.api(p jsonb) returns jsonb
+language plpgsql as $fn$
+declare r text := coalesce(p->>'rota', '');
+begin
+  if r = 'painel' and not exists (
+    select 1 from suporte.config
+     where chave = 'painel_token_sha256'
+       and valor = encode(sha256(convert_to(coalesce(p->>'token', ''), 'UTF8')), 'hex')
+  ) then
+    return jsonb_build_object('ok', false, 'erro', 'nao_autorizado');
+  end if;
+  if r = 'in' then return suporte.r_in(coalesce(p->'body', '{}'::jsonb)); end if;
+  if r = 'out' then return suporte.r_out(coalesce(p->'body', '{}'::jsonb)); end if;
+  if r = 'painel' then return suporte.r_painel(coalesce(p->'body', '{}'::jsonb)); end if;
+  if r = 'limpar' then return suporte.r_limpar(); end if;
+  return jsonb_build_object('ok', false, 'erro', 'rota_invalida');
+end
+$fn$;
+
+-- ---------------------------------------------------------------- senha do painel
+-- Troque TROQUE_PELO_TOKEN_DO_PAINEL pelo token do painel e rode esta linha (o banco guarda só o hash):
+-- insert into suporte.config (chave, valor) values ('painel_token_sha256', encode(sha256(convert_to('TROQUE_PELO_TOKEN_DO_PAINEL', 'UTF8')), 'hex'))
+--   on conflict (chave) do update set valor = excluded.valor;
