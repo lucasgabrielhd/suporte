@@ -134,6 +134,19 @@ input,textarea{font:inherit;color:var(--txt)}
 .modal textarea{width:100%;min-height:170px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);outline:0;resize:vertical}
 .vars{font-size:11.5px;color:var(--mut);margin-top:8px;line-height:1.9}
 .vars code{background:var(--chip);padding:1px 6px;border-radius:5px;cursor:pointer;color:var(--txt)}
+.oc{border:1px solid #f3d6a2;background:#fff8ec;border-radius:12px;padding:10px 12px;margin:0 12px 10px}
+.oc.ok{border-color:var(--line);background:var(--panel);opacity:.8}
+.oc .t{font-weight:650;font-size:13px}.oc .s{font-size:12px;color:var(--mut);margin-top:2px}
+.oc .cn{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+@media (prefers-color-scheme:dark){.oc{background:#2a210f;border-color:#5a4316}}
+.tl2{list-style:none;margin:0;padding:0}
+.tl2 li{position:relative;padding:0 0 12px 18px;font-size:12.5px}
+.tl2 li:before{content:'';position:absolute;left:4px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--mut)}
+.tl2 li:after{content:'';position:absolute;left:7px;top:14px;bottom:0;width:1px;background:var(--line)}
+.tl2 li:last-child:after{display:none}
+.tl2 li.tg:before{background:var(--ok)}.tl2 li.ty:before{background:var(--warn)}.tl2 li.tr:before{background:var(--bad)}.tl2 li.tb:before{background:var(--pri)}
+.tl2 .q{color:var(--mut);font-size:11px}
+.tl2 .tm{color:var(--mut);white-space:pre-wrap;margin-top:2px;max-height:3.9em;overflow:hidden}
 @media (max-width:1100px){.main{grid-template-columns:300px 1fr 0}.main .crm{display:none}.main.crmon{grid-template-columns:300px 1fr 300px}.main.crmon .crm{display:block}}
 @media (max-width:760px){
 .main,.main.crmon,.main.nocrm{grid-template-columns:1fr}
@@ -549,6 +562,62 @@ function blocoRastreio(p,i){
   h+=`<div class="tl">${ev.length>1?`<button class="lk" data-trkab="${esc(p.rastreio)}">${ab?'esconder histórico':'histórico ('+(ev.length-1)+')'}</button>`:'<span></span>'}<span class="lc">${r.carregando?'atualizando…':r.em?'consultado '+hora(r.em):''} <button class="lk" data-trkf="${i}" title="Consultar de novo">↻</button></span></div></div>`;
   return h;
 }
+const PAINEL_OCORR='https://sites-web.sdrs1j.easypanel.host/painel/';
+async function buscaOcorr(conv,ps){
+  const cods=[...new Set(ps.map(p=>p.rastreio).filter(Boolean))].slice(0,6);
+  S.ocorr={conv,itens:null};
+  if(!cods.length){S.ocorr.itens=[];return}
+  try{const j=await api('ocorrencias',{codigos:cods});if(S.ocorr.conv===conv)S.ocorr.itens=j.ok?(j.ocorrencias||[]):[]}catch(e){if(S.ocorr.conv===conv)S.ocorr.itens=[]}
+  if(S.sel===conv)renderCrm(S.chat?.cliente);
+}
+function dadosOcorr(o){
+  const r=o.registros||{};
+  const pr=(r.problema&&typeof r.problema==='object')?r.problema:(Object.values(r).find(v=>v&&typeof v==='object')||{});
+  const resolvido=Object.keys(r).some(k=>/resolv|fechad/i.test(k))||/resolv|fechad/i.test(pr.estado||'')||!!pr.resolvido_em;
+  return{codigo:o.codigo,pr,resolvido,
+    titulo:pr.problema||pr.categoria||pr.motivo||'Ocorrência de entrega',
+    transp:pr.carrier||pr.transportadora||'',
+    dias:pr.dias_sem_movimentacao??pr.dias_parado??null,
+    ev:pr.evento_atual||pr.ultimo_evento||pr.evento||'',
+    evEm:pr.evento_atual_em||pr.ultimo_evento_em||'',
+    detectado:pr.criado_em||pr.detectado_em||pr.primeiro_em||pr.registrado_em||'',
+    avisado:pr.avisado_em||(r.envio&&typeof r.envio==='object'&&(r.envio.em||r.envio.avisado_em))||'',
+    email:pr.email_frenet,wa:pr.wa_cliente,
+    nota:pr.nota||(typeof r.nota==='string'?r.nota:r.nota?.texto)||'',
+    resolvidoEm:pr.resolvido_em||(r.resolvido&&typeof r.resolvido==='object'&&r.resolvido.em)||''};
+}
+function blocoOcorr(){
+  if(!S.ocorr||S.ocorr.conv!==S.sel)return'';
+  if(S.ocorr.itens===null)return'';
+  if(!S.ocorr.itens.length)return'';
+  const sim=v=>v===true||v==='sim'||(typeof v==='string'&&v&&v!=='nao'&&v!=='não');
+  return'<h3>Ocorrências de entrega</h3>'+S.ocorr.itens.map(o=>{const d=dadosOcorr(o);return`<div class="oc${d.resolvido?' ok':''}">
+    <div class="t">${d.resolvido?'✔':'⚠'} ${esc(d.titulo)}</div>
+    <div class="s">${esc([d.transp,d.codigo,d.dias!=null&&!d.resolvido?d.dias+' dia(s) parado':''].filter(Boolean).join(' · '))}</div>
+    ${d.ev?`<div class="s">Último evento: ${esc(d.ev)}${d.evEm?' ('+esc(quandoEv(d.evEm))+')':''}</div>`:''}
+    ${d.nota?`<div class="s">Nota: ${esc(d.nota)}</div>`:''}
+    <div class="cn">${d.resolvido?`<span class="chip">resolvida${d.resolvidoEm?' '+esc(quandoEv(d.resolvidoEm)):''}</span>`:'<span class="chip">aberta</span>'}${sim(d.email)?'<span class="chip">✉ Frenet acionada</span>':''}${sim(d.wa)?'<span class="chip">💬 cliente avisada</span>':''}${d.avisado?`<span class="chip">avisada ${esc(quandoEv(d.avisado))}</span>`:''}<a class="lk" href="${PAINEL_OCORR}" target="_blank" rel="noopener">abrir painel</a></div></div>`}).join('');
+}
+const TL={
+  pedido_criado:['🛒','Pedido criado','tb'],pedido_pago:['💳','Pagamento aprovado','tg'],pedido_enviado:['🚚','Pedido enviado','tb'],pedido_entregue:['✅','Pedido entregue','tg'],
+  carrinho_abandonado:['🛒','Abandonou carrinho','ty'],cadastro:['👤','Cadastro no site',''],optout:['🚫','Pediu pra não receber mensagens','tr'],
+  wa_enviado:['💬','CRM mandou WhatsApp',''],wa_falhou:['⚠','WhatsApp do CRM falhou','tr'],cliente_respondeu:['🗨','Cliente respondeu (CRM/bot)','tb'],
+  email_enviado:['✉','E-mail do CRM',''],email_falhou:['⚠','E-mail do CRM falhou','tr'],painel_disparo:['📣','Disparo do painel','']};
+const rotulo=v=>String(v||'').replace(/^recompra$/,'recompra').replace(/_/g,' ');
+function blocoTimeline(c){
+  const it=[];
+  for(const e of(c.eventos||[])){const m=TL[e.tipo]||['•',String(e.tipo||'').replace(/_/g,' '),''];
+    const det=[e.etapa,/^(SM-|moto|Galaxy)/i.test(e.variant||'')?'':e.variant].filter(Boolean).map(rotulo).join(' · ');
+    it.push({em:e.em,ic:m[0],t:m[1]+(det?` (${det})`:''),cls:m[2],msg:e.tipo==='wa_enviado'||e.tipo==='cliente_respondeu'?e.msg:''})}
+  if(S.ocorr&&S.ocorr.conv===S.sel&&S.ocorr.itens)for(const o of S.ocorr.itens){const d=dadosOcorr(o);
+    if(d.detectado||d.evEm)it.push({em:d.detectado||d.evEm,ic:'⚠',t:`Ocorrência: ${d.titulo}`,cls:'ty',msg:d.transp?d.transp+' · '+d.codigo:d.codigo});
+    if(d.resolvido&&d.resolvidoEm)it.push({em:d.resolvidoEm,ic:'✔',t:'Ocorrência resolvida',cls:'tg',msg:''})}
+  const ok=it.filter(x=>!isNaN(Date.parse(x.em))).sort((a,b)=>Date.parse(b.em)-Date.parse(a.em));
+  if(!ok.length)return'';
+  const n=S.tlTudo?ok.length:8;
+  return`<h3>Linha do tempo</h3><div class="card"><ul class="tl2">${ok.slice(0,n).map(x=>`<li class="${x.cls}"><div>${x.ic} ${esc(x.t)}</div><div class="q">${esc(quandoEv(x.em))}</div>${x.msg?`<div class="tm">${esc(x.msg)}</div>`:''}</li>`).join('')}</ul>${ok.length>8?`<button class="lk" data-tltudo="1">${S.tlTudo?'mostrar menos':'ver tudo ('+ok.length+')'}</button>`:''}</div>`;
+}
+document.addEventListener('click',e=>{if(e.target.closest('[data-tltudo]')){S.tlTudo=!S.tlTudo;renderCrm(S.chat?.cliente)}});
 function renderCrm(c){
   const el=$('#crm');el.dataset.ok='1';
   const voltar='<div style="padding:12px 12px 0"><button class="btn sm back" data-fechacrm="1">← voltar pro chat</button></div>';
@@ -568,9 +637,11 @@ function renderCrm(c){
   el.innerHTML=voltar+`<h3>Cliente</h3><div class="card"><div style="font-weight:650;font-size:15px;margin-bottom:6px">${esc(tc(c.nome))}</div>
     <div class="kv"><span>Telefone</span><span>${esc(fone(c.telefone))}</span><span>E-mail</span><span style="word-break:break-all">${esc(c.email||'—')}</span><span>Cidade</span><span>${esc([c.cidade,c.uf].filter(Boolean).join(' / ')||'—')}</span><span>Pedidos</span><span>${c.pedidos??0} · ${brl(c.ltv)}</span><span>Última compra</span><span>${c.ultimo_pedido?dia(c.ultimo_pedido):'—'}</span></div>
     <div class="chips">${c.rfm?`<span class="chip">${esc(c.rfm)}</span>`:''}${c.optout?'<span class="chip">opt-out</span>':''}</div></div>
+    ${blocoOcorr()}
     ${c.ficha?`<h3>Ficha</h3><div class="card ficha">${esc(c.ficha)}</div>`:''}
-    <h3>Últimos pedidos</h3><div class="card">${peds||'<span style="color:var(--mut)">Sem pedidos</span>'}</div>`;
-  if(!S.autoRast||S.autoRast!==conv.conv){S.autoRast=conv.conv;ps.filter(p=>p.rastreio&&!p.entregue).slice(0,2).forEach(p=>buscaRastreio(p,false))}
+    <h3>Últimos pedidos</h3><div class="card">${peds||'<span style="color:var(--mut)">Sem pedidos</span>'}</div>
+    ${blocoTimeline(c)}`;
+  if(!S.autoRast||S.autoRast!==conv.conv){S.autoRast=conv.conv;S.tlTudo=false;buscaOcorr(conv.conv,ps);ps.filter(p=>p.rastreio&&!p.entregue).slice(0,2).forEach(p=>buscaRastreio(p,false))}
 }
 function modeloPor(atalho,padrao){const r=S.respostas.find(x=>x.atalho===atalho);return r?r.texto:padrao}
 const PADRAO_RASTREIO='Olá, {nome}! Tudo bem? 💙\n\nSeu pedido #{pedido} já está a caminho. Seguem os dados para acompanhar:\n\n📦 Código: {rastreio}\n🔎 Link de rastreamento: {link_rastreio}\n📍 Última atualização: {ultima_atualizacao}\n📅 Previsão de entrega: {previsao}\n\n{aviso_envio}\n\nQualquer dúvida, estamos à disposição! 😊\n\nEquipe Face Clean 🌿';

@@ -323,7 +323,14 @@ begin
        limit 5
     ) s;
 
-  return v_cli || jsonb_build_object('ultimos_pedidos', v_ped);
+  return v_cli || jsonb_build_object('ultimos_pedidos', v_ped, 'eventos', (
+    select coalesce(jsonb_agg(x order by x->>'em' desc), '[]'::jsonb) from (
+      select jsonb_build_object('tipo', e.tipo, 'etapa', e.etapa, 'variant', e.variant,
+               'msg', left(e.payload->>'mensagem', 180), 'via', e.payload->>'via', 'em', e.occurred_at) x
+        from public.eventos e
+       where e.cliente_id = v_id and e.tipo not in ('wa_enfileirado', 'wa_descartado')
+       order by e.occurred_at desc
+       limit 40) t));
 exception when others then
   return jsonb_build_object('erro', 'crm_indisponivel: ' || sqlerrm);
 end
@@ -398,6 +405,16 @@ begin
   if v_acao = 'resposta_apagar' then
     delete from suporte.respostas where id = (b->>'id')::bigint;
     return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'ocorrencias' then
+    select coalesce(jsonb_agg(c), '[]'::jsonb) into v_r
+      from (select distinct regexp_replace(x, '[^A-Za-z0-9]', '', 'g') c
+              from jsonb_array_elements_text(coalesce(b->'codigos', '[]'::jsonb)) x
+             where length(regexp_replace(x, '[^A-Za-z0-9]', '', 'g')) >= 6
+             limit 6) t;
+    if jsonb_array_length(v_r) = 0 then return jsonb_build_object('ok', true, 'ocorrencias', '[]'::jsonb); end if;
+    return jsonb_build_object('ok', true, 'ocorr_codigos', v_r);
   end if;
 
   if v_acao = 'rastreio' then

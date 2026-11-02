@@ -31,6 +31,8 @@ atendente digita ─▶ painel ─▶ fila no Postgres ─▶ app busca em wa-su
 - **Respostas rápidas no banco** (`suporte.respostas`), compartilhadas entre atendentes, com variáveis `{nome}` `{atendente}` `{pedido}` `{rastreio}` `{link_rastreio}` `{ultima_atualizacao}` `{previsao}` `{status}` `{valor}` `{produtos}` `{transportadora}` `{aviso_envio}`. Linha com variável vazia some.
 - **Esperando resposta:** cronômetro em cada conversa (laranja ≥5 min, vermelho ≥15 min), aba "Esperando" (mais antiga primeiro) e contador no topo.
 - **Notificação do Windows** quando chega mensagem com o painel minimizado (o navegador pede permissão no primeiro clique).
+- **Ocorrências de entrega:** o card mostra o que o Painel de Ocorrências tem pra cada rastreio da cliente (problema, dias parado, Frenet acionada, cliente avisada, resolvida), lendo as chaves `painel:*:<código>` no Redis.
+- **Linha do tempo:** pedidos (criado/pago/enviado/entregue), mensagens do CRM e respostas da cliente (`public.eventos`) e ocorrências, do mais novo pro mais antigo.
 - **7 dias:** mensagens, fotos e áudios com mais de 7 dias são apagados de hora em hora.
 - **Nunca manda 2x:** cada resposta tem um id; o app guarda os ids já enviados.
 
