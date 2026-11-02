@@ -46,11 +46,11 @@ on conflict (chave) do update set valor = excluded.valor;
 2. Importe [`n8n/WA_Suporte_FC.json`](n8n/WA_Suporte_FC.json) → nos webhooks `App envia (in)` e `App busca (out)` escolha a credencial `WA Suporte App` → Postgres já vem com `CRM Postgres`.
 3. Ative o fluxo. Execuções com sucesso **não são salvas** (o app e o painel consultam a cada poucos segundos).
 
-### 3. Painel
-Suba `painel/index.html` no Easypanel (projeto `sites`, serviço `web`), numa pasta difícil de adivinhar, ex.:
-`/usr/share/nginx/html/suporte-2eeb849c/index.html` → `https://sites-web.sdrs1j.easypanel.host/suporte-2eeb849c/`.
-Se hospedar em outro domínio, troque o **Allowed Origins** do webhook `Painel (api)`.
-No primeiro acesso o painel pede o nome da atendente e o token do painel.
+### 3. Painel (arquivo no PC dela)
+O painel é um arquivo HTML que abre direto no navegador do PC dela (dois cliques), sem hospedar em lugar nenhum.
+Preencha `TOKEN_PADRAO` no começo do `<script>` com o token do painel antes de mandar pra ela, que ele já abre conectado.
+O webhook `Painel (api)` aceita qualquer origem (`*`) porque arquivo local manda origem `null`; quem barra é o token, conferido no Postgres.
+O nome dela (que aparece nas respostas) e o token podem ser trocados no ⚙️.
 
 ### 4. Celular (S21 FE)
 1. Baixe o APK em **Releases** e instale.

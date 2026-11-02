@@ -55,7 +55,7 @@
         "path": "wa-suporte-painel",
         "responseMode": "responseNode",
         "options": {
-          "allowedOrigins": "https://sites-web.sdrs1j.easypanel.host"
+          "allowedOrigins": "*"
         }
       },
       "id": "acfdad18-3b24-456b-9758-1bed44d2bbdd",

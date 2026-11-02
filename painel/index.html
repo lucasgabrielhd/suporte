@@ -169,9 +169,11 @@ input,textarea{font:inherit;color:var(--txt)}
 
 <script>
 const URL_PADRAO='https://n8n.facecleanoficial.com.br/webhook/wa-suporte-painel';
+const TOKEN_PADRAO='';
+const NOME_PADRAO='Suporte';
 const TZ='America/Fortaleza';
 const LS={get:(k,d)=>{try{const v=localStorage.getItem('fcsup_'+k);return v===null?d:JSON.parse(v)}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem('fcsup_'+k,JSON.stringify(v))}catch(e){}}};
-const S={url:LS.get('url',URL_PADRAO),tok:LS.get('tok',''),nome:LS.get('nome',''),filtro:'abertas',busca:'',convs:[],sel:null,chat:null,pend:[],media:new Map(),loadingMedia:new Set(),lastUnread:-1,som:LS.get('som',true),crmOpen:LS.get('crm',true),lastIds:'',stick:true,qr:LS.get('qr',null)};
+const S={url:LS.get('url',URL_PADRAO),tok:LS.get('tok','')||TOKEN_PADRAO,nome:LS.get('nome','')||NOME_PADRAO,filtro:'abertas',busca:'',convs:[],sel:null,chat:null,pend:[],media:new Map(),loadingMedia:new Set(),lastUnread:-1,som:LS.get('som',true),crmOpen:LS.get('crm',true),lastIds:'',stick:true,qr:LS.get('qr',null)};
 if(!S.qr)S.qr=[
 {a:'oi',t:'Oi, {nome}! Aqui é {atendente}, do suporte da Face Clean 💙 Como posso te ajudar?'},
 {a:'pedido',t:'Pode me passar o número do pedido ou o CPF da compra, por favor? Assim eu já verifico pra você.'},
@@ -429,7 +431,7 @@ function renderCrm(c){
 document.addEventListener('click',e=>{if(e.target.closest('[data-fechacrm]')){$('#main').classList.remove('crmon');return}const b=e.target.closest('[data-cp]');if(b){navigator.clipboard?.writeText(b.dataset.cp);toast('Copiado')}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){loopConvs(true);if(S.sel)loopChat()}});
 
-if(!S.tok||!S.nome)abrirCfg();else loopConvs(true);
+if(!S.tok)abrirCfg();else loopConvs(true);
 </script>
 </body>
 </html>
