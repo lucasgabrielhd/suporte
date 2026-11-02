@@ -1,7 +1,7 @@
 -- WA Suporte FC — schema "suporte" no Postgres do CRM (banco crm).
 -- Só cria coisas novas: não altera nenhuma tabela existente do CRM (public.*), só lê clientes/pedidos pro card da cliente.
 -- Pode rodar de novo quantas vezes quiser (idempotente).
--- Retenção: mensagens, fotos e áudios com mais de 7 dias são apagados pela rota 'limpar' (o fluxo n8n chama de hora em hora).
+-- Retenção: fotos e áudios somem com 7 dias; texto das mensagens (incluindo transcrição dos áudios) fica 1 ano. A rota 'limpar' roda de hora em hora pelo fluxo n8n.
 
 create schema if not exists suporte;
 
@@ -51,6 +51,7 @@ create table if not exists suporte.midias (
   criado_em timestamptz not null default now()
 );
 create index if not exists midias_msg_idx on suporte.midias (mensagem_id);
+create index if not exists midias_criado_idx on suporte.midias (criado_em);
 
 create table if not exists suporte.config (
   chave text primary key,
@@ -520,20 +521,22 @@ begin
 end
 $fn$;
 
--- ---------------------------------------------------------------- limpeza (7 dias)
+-- ---------------------------------------------------------------- limpeza (fotos e áudios 7 dias, texto 1 ano)
 
 create or replace function suporte.r_limpar() returns jsonb
 language plpgsql as $fn$
-declare v_m int; v_c int;
+declare v_d int; v_m int; v_c int;
 begin
-  delete from suporte.mensagens where criado_em < now() - interval '7 days';
+  delete from suporte.midias where criado_em < now() - interval '7 days';
+  get diagnostics v_d = row_count;
+  delete from suporte.mensagens where criado_em < now() - interval '1 year';
   get diagnostics v_m = row_count;
   delete from suporte.conversas c
-   where c.ultima_em < now() - interval '7 days'
+   where c.ultima_em < now() - interval '1 year'
      and not exists (select 1 from suporte.mensagens m where m.conv = c.conv);
   get diagnostics v_c = row_count;
   delete from suporte.rastreio_cache where atualizado_em < now() - interval '7 days';
-  return jsonb_build_object('ok', true, 'mensagens_apagadas', v_m, 'conversas_apagadas', v_c);
+  return jsonb_build_object('ok', true, 'midias_apagadas', v_d, 'mensagens_apagadas', v_m, 'conversas_apagadas', v_c);
 end
 $fn$;
 
