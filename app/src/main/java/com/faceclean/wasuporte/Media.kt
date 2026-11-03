@@ -227,7 +227,7 @@ object Media {
             File(sd, "$WA_LEGACY/WhatsApp Images")
         )
         val out = ArrayList<File>()
-        for (d in dirs) d.listFiles()?.filterTo(out) { it.isFile && it.extension.lowercase() in IMG_EXTS }
+        for (d in dirs + dirs.map { File(it, "Private") }) d.listFiles()?.filterTo(out) { it.isFile && it.extension.lowercase() in IMG_EXTS }
         return out
     }
 
