@@ -231,6 +231,7 @@ input,textarea{font:inherit;color:var(--txt)}
   <div id="fIa" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:none">
     <label style="margin-top:0">IA no WhatsApp do suporte (vale pra todas)</label>
     <label class="ck"><input type="checkbox" id="iaR"> Mandar rastreio/status sozinha pra cliente que só pede o código</label>
+    <label class="ck"><input type="checkbox" id="iaC"> Mandar o link de compra pra cliente que quer comprar de novo (modelo /auto-recompra)</label>
     <label class="ck"><input type="checkbox" id="iaV"> Fernanda responde quem ainda não comprou (lead do anúncio)</label>
     <label class="ck">Quando tiver problema, IA fica fora da conversa por <input type="number" id="iaD" min="1" max="60" style="width:64px;padding:4px 6px;display:inline-block"> dias</label>
   </div>
@@ -279,7 +280,7 @@ async function api(acao,extra={}){
   return j;
 }
 
-function abrirCfg(msg=''){const c=S.iaCfg;$('#fIa').style.display=c?'':'none';if(c){$('#iaR').checked=c.ia_rastreio==='sim';$('#iaV').checked=c.ia_venda==='sim';$('#iaD').value=c.ia_trava_dias||7}$('#fNome').value=S.nome;$('#fTok').value=S.tok;$('#fUrl').value=S.url;$('#fMsg').textContent=msg;$('#ov').classList.add('on');setTimeout(()=>(S.nome?$('#fTok'):$('#fNome')).focus(),50)}
+function abrirCfg(msg=''){const c=S.iaCfg;$('#fIa').style.display=c?'':'none';if(c){$('#iaR').checked=c.ia_rastreio==='sim';$('#iaV').checked=c.ia_venda==='sim';$('#iaC').checked=c.ia_recompra!=='nao';$('#iaD').value=c.ia_trava_dias||7}$('#fNome').value=S.nome;$('#fTok').value=S.tok;$('#fUrl').value=S.url;$('#fMsg').textContent=msg;$('#ov').classList.add('on');setTimeout(()=>(S.nome?$('#fTok'):$('#fNome')).focus(),50)}
 $('#cfg').onclick=()=>abrirCfg();
 $('#fCancel').onclick=()=>{if(S.tok)$('#ov').classList.remove('on')};
 $('#fSalvar').onclick=async()=>{
@@ -287,7 +288,7 @@ $('#fSalvar').onclick=async()=>{
   if(!S.nome||!S.tok){$('#fMsg').textContent='Preencha nome e token';return}
   LS.set('nome',S.nome);LS.set('tok',S.tok);LS.set('url',S.url);
   $('#fMsg').textContent='Conectando…';
-  try{if(S.iaCfg){const d=Math.max(1,Math.min(60,parseInt($('#iaD').value)||7));await api('ia_config',{rastreio:$('#iaR').checked,venda:$('#iaV').checked,trava_dias:String(d)});S.iaCfg={ia_rastreio:$('#iaR').checked?'sim':'nao',ia_venda:$('#iaV').checked?'sim':'nao',ia_trava_dias:String(d)}}await api('convs',{filtro:S.filtro});$('#ov').classList.remove('on');loopConvs(true);carregaRespostas()}catch(e){if(e.message!=='nao_autorizado')$('#fMsg').textContent='Não conectou: '+e.message}
+  try{if(S.iaCfg){const d=Math.max(1,Math.min(60,parseInt($('#iaD').value)||7));await api('ia_config',{rastreio:$('#iaR').checked,venda:$('#iaV').checked,recompra:$('#iaC').checked,trava_dias:String(d)});S.iaCfg={ia_rastreio:$('#iaR').checked?'sim':'nao',ia_venda:$('#iaV').checked?'sim':'nao',ia_recompra:$('#iaC').checked?'sim':'nao',ia_trava_dias:String(d)}}await api('convs',{filtro:S.filtro});$('#ov').classList.remove('on');loopConvs(true);carregaRespostas()}catch(e){if(e.message!=='nao_autorizado')$('#fMsg').textContent='Não conectou: '+e.message}
 };
 $('#fTok').onkeydown=e=>{if(e.key==='Enter')$('#fSalvar').click()};
 $('#som').onclick=()=>{S.som=!S.som;LS.set('som',S.som);$('#som').textContent=S.som?'🔔':'🔕';toast(S.som?'Som ligado':'Som desligado')};

@@ -32,6 +32,7 @@ atendente digita ─▶ painel ─▶ fila no Postgres ─▶ app busca em wa-su
 - **Aba Clientes:** conversas abertas de quem já tem pedido pago no CRM, quem espera há mais tempo primeiro. A etiqueta na lista mostra 📦 a caminho, 📦 preparando, 🛍 cliente ou ⏳ falta pagar, e o número vermelho na aba conta clientes esperando resposta. Atualiza a cada 3h (ou na hora, quando ela manda mensagem).
 - **IA no suporte:** depois de responder o app, o fluxo espera 15s (junta mensagens seguidas) e decide:
   - cliente que só pede rastreio → manda o modelo `/rastreio` **1x por código**; pedido faturado sem código → `/auto-preparando` **1x por pedido**;
+  - cliente que quer comprar de novo (sem pedido aberto, sem pedido em 7 dias, sem reclamação/reação em 60 dias) → modelo `/auto-recompra` com o passo a passo e o link com cupom, 1x por semana;
   - quem não comprou e veio do anúncio → **Fernanda** (pré-venda, gpt-4o-mini);
   - qualquer problema (atraso, troca, reação, cobrança, taxa, golpe, foto, falou de pedido sem compra no número, pediu atendente) → **não responde**, marca a etiqueta *Atendimento humano* e trava a IA na conversa por 7 dias;
   - atendente respondeu pelo painel → IA fora da conversa por 24h. Liga/desliga e dias de trava no ⚙️; travar/liberar por conversa no 🏷 ▾.

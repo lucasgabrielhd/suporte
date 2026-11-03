@@ -459,7 +459,7 @@ begin
                       'segundos', extract(epoch from now() - a.visto_em)::int, 'dados', a.dados)), '[]'::jsonb)
                       from suporte.aparelhos a where a.aparelho <> '_painel'),
       'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta' and not silenciada),
-      'ia_cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_trava_dias')),
+      'ia_cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_recompra', 'ia_trava_dias')),
       'convs_nao_lidas', (select count(*) from suporte.conversas where nao_lidas > 0 and not silenciada),
       'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada),
       'clientes_esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada and coalesce((crm->>'pedidos')::int, 0) > 0),
@@ -603,6 +603,7 @@ begin
     insert into suporte.config (chave, valor)
     select k, v from (values ('ia_rastreio', case when (b->>'rastreio')::boolean then 'sim' else 'nao' end),
                              ('ia_venda', case when (b->>'venda')::boolean then 'sim' else 'nao' end),
+                             ('ia_recompra', case when coalesce((b->>'recompra')::boolean, true) then 'sim' else 'nao' end),
                              ('ia_trava_dias', case when coalesce(b->>'trava_dias', '') ~ '^[1-9]\d{0,2}$' then b->>'trava_dias' else '7' end)) x(k, v)
     on conflict (chave) do update set valor = excluded.valor;
     return jsonb_build_object('ok', true);
@@ -733,13 +734,17 @@ create table if not exists suporte.ia_log (
 create unique index if not exists ia_log_ref_uq on suporte.ia_log (acao, ref) where acao in ('rastreio', 'preparando') and ref is not null;
 create index if not exists ia_log_conv_idx on suporte.ia_log (conv, criado_em desc);
 
-insert into suporte.config (chave, valor) values ('ia_rastreio', 'sim'), ('ia_venda', 'sim'), ('ia_trava_dias', '7')
+insert into suporte.config (chave, valor) values ('ia_rastreio', 'sim'), ('ia_venda', 'sim'), ('ia_recompra', 'sim'), ('ia_trava_dias', '7')
 on conflict (chave) do nothing;
 
 insert into suporte.etiquetas (nome, cor, ordem) values ('Atendimento humano', '#c92a2a', 5) on conflict (nome) do nothing;
 
 insert into suporte.respostas (atalho, texto, ordem)
 values ('auto-preparando', E'Olá, {nome}! Tudo bem? 💙\n\nSeu pedido #{pedido} já foi faturado e está sendo preparado pra envio 📦\nAssim que for postado, o código de rastreio chega aqui no WhatsApp.\n\nEquipe Face Clean 🌿', 35)
+on conflict (atalho) do nothing;
+
+insert into suporte.respostas (atalho, texto, ordem)
+values ('auto-recompra', E'Oi, {nome}! Que bom te ver de novo por aqui 💙\n\nPra comprar é rapidinho:\n1️⃣ Clica no link abaixo (o cupom *BLACK* já vai aplicado, 20% OFF)\n2️⃣ Confere seus dados e o endereço de entrega\n3️⃣ Escolhe Pix, cartão em até 12x ou boleto e finaliza\n\n👉 https://seguro.facecleanoficial.com/r/TTHQ1FXD32?promocode=BLACK\n\nFrete grátis pra todo o Brasil 🚚\nSe quiser levar 2 ou um kit, me fala aqui que te mando o link certinho 😊\n\nEquipe Face Clean 🌿', 36)
 on conflict (atalho) do nothing;
 
 create or replace function suporte.ia_elegivel(p_conv text) returns boolean
@@ -749,10 +754,33 @@ language sql stable as $fn$
      where c.conv = p_conv
        and not c.silenciada
        and (c.ia_trava_ate is null or c.ia_trava_ate < now())
-       and exists (select 1 from suporte.config where chave in ('ia_rastreio', 'ia_venda') and valor = 'sim')
+       and exists (select 1 from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_recompra') and valor = 'sim')
        and not exists (select 1 from suporte.mensagens o
                         where o.conv = c.conv and o.direcao = 'out' and o.status <> 'cancelada'
                           and coalesce(o.autor, '') not like '%🤖%' and o.criado_em > now() - interval '24 hours'))
+$fn$;
+
+create or replace function suporte.ia_alertas(p_numero text) returns int
+language plpgsql stable as $fn$
+declare
+  v_num text := regexp_replace(coalesce(p_numero, ''), '\D', '', 'g');
+  v_alts text[];
+  v_n int;
+begin
+  if length(v_num) < 12 then return 0; end if;
+  v_alts := array[v_num];
+  if length(v_num) = 13 and substr(v_num, 5, 1) = '9' then v_alts := v_alts || (substr(v_num, 1, 4) || substr(v_num, 6)); end if;
+  if length(v_num) = 12 then v_alts := v_alts || (substr(v_num, 1, 4) || '9' || substr(v_num, 5)); end if;
+  select count(*) into v_n
+    from public.ia_classificacoes x
+    join public.clientes c on c.id = x.cliente_id
+   where c.telefone = any(v_alts)
+     and x.criado_em > now() - interval '60 days'
+     and (x.etiqueta in ('reclamacao', 'reacao', 'parar') or x.bloquear);
+  return coalesce(v_n, 0);
+exception when others then
+  return 0;
+end
 $fn$;
 
 create or replace function suporte.ia_contexto(b jsonb) returns jsonb
@@ -785,8 +813,11 @@ begin
                 order by m.id desc limit 14) s),
     'refs', (select coalesce(jsonb_agg(acao || ':' || ref), '[]'::jsonb) from suporte.ia_log where conv = v_conv and ref is not null),
     'vendas_24h', (select count(*) from suporte.ia_log where conv = v_conv and acao = 'venda' and criado_em > now() - interval '24 hours'),
-    'cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_trava_dias')),
-    'modelos', (select jsonb_object_agg(atalho, texto) from suporte.respostas where atalho in ('rastreio', 'auto-preparando'))));
+    'compra_7d', (select count(*) from suporte.ia_log where conv = v_conv and acao = 'compra' and criado_em > now() - interval '7 days'),
+    'humano_30d', (select count(*) from suporte.ia_log where conv = v_conv and acao = 'humano' and criado_em > now() - interval '30 days'),
+    'alertas_60d', suporte.ia_alertas(v_c.numero),
+    'cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_recompra', 'ia_trava_dias')),
+    'modelos', (select jsonb_object_agg(atalho, texto) from suporte.respostas where atalho in ('rastreio', 'auto-preparando', 'auto-recompra'))));
 end
 $fn$;
 
@@ -806,7 +837,7 @@ begin
   if not exists (select 1 from suporte.conversas where conv = v_conv) or v_ult is null then
     return jsonb_build_object('ok', false, 'erro', 'sem_conversa');
   end if;
-  if v_acao in ('rastreio', 'preparando', 'venda') then
+  if v_acao in ('rastreio', 'preparando', 'venda', 'compra') then
     if v_txt = '' then return jsonb_build_object('ok', false, 'erro', 'texto_vazio'); end if;
     if not suporte.ia_elegivel(v_conv)
        or exists (select 1 from suporte.mensagens where conv = v_conv and direcao = 'in' and id > v_ult)
