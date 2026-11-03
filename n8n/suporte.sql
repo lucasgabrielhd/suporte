@@ -459,7 +459,7 @@ begin
                       'segundos', extract(epoch from now() - a.visto_em)::int, 'dados', a.dados)), '[]'::jsonb)
                       from suporte.aparelhos a where a.aparelho <> '_painel'),
       'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta' and not silenciada),
-      'ia_cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_recompra', 'ia_trava_dias')),
+      'ia_cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_recompra', 'ia_recompra_ate', 'ia_trava_dias')),
       'convs_nao_lidas', (select count(*) from suporte.conversas where nao_lidas > 0 and not silenciada),
       'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada),
       'clientes_esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada and coalesce((crm->>'pedidos')::int, 0) > 0),
@@ -604,6 +604,7 @@ begin
     select k, v from (values ('ia_rastreio', case when (b->>'rastreio')::boolean then 'sim' else 'nao' end),
                              ('ia_venda', case when (b->>'venda')::boolean then 'sim' else 'nao' end),
                              ('ia_recompra', case when coalesce((b->>'recompra')::boolean, true) then 'sim' else 'nao' end),
+                             ('ia_recompra_ate', case when coalesce(b->>'recompra_ate', '') ~ '^\d{4}-\d{2}-\d{2}$' then b->>'recompra_ate' else coalesce((select valor from suporte.config where chave = 'ia_recompra_ate'), '2026-11-30') end),
                              ('ia_trava_dias', case when coalesce(b->>'trava_dias', '') ~ '^[1-9]\d{0,2}$' then b->>'trava_dias' else '7' end)) x(k, v)
     on conflict (chave) do update set valor = excluded.valor;
     return jsonb_build_object('ok', true);
@@ -734,7 +735,7 @@ create table if not exists suporte.ia_log (
 create unique index if not exists ia_log_ref_uq on suporte.ia_log (acao, ref) where acao in ('rastreio', 'preparando') and ref is not null;
 create index if not exists ia_log_conv_idx on suporte.ia_log (conv, criado_em desc);
 
-insert into suporte.config (chave, valor) values ('ia_rastreio', 'sim'), ('ia_venda', 'sim'), ('ia_recompra', 'sim'), ('ia_trava_dias', '7')
+insert into suporte.config (chave, valor) values ('ia_rastreio', 'sim'), ('ia_venda', 'sim'), ('ia_recompra', 'sim'), ('ia_recompra_ate', '2026-11-30'), ('ia_trava_dias', '7')
 on conflict (chave) do nothing;
 
 insert into suporte.etiquetas (nome, cor, ordem) values ('Atendimento humano', '#c92a2a', 5) on conflict (nome) do nothing;
@@ -816,7 +817,7 @@ begin
     'compra_7d', (select count(*) from suporte.ia_log where conv = v_conv and acao = 'compra' and criado_em > now() - interval '7 days'),
     'humano_30d', (select count(*) from suporte.ia_log where conv = v_conv and acao = 'humano' and criado_em > now() - interval '30 days'),
     'alertas_60d', suporte.ia_alertas(v_c.numero),
-    'cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_recompra', 'ia_trava_dias')),
+    'cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_recompra', 'ia_recompra_ate', 'ia_trava_dias')),
     'modelos', (select jsonb_object_agg(atalho, texto) from suporte.respostas where atalho in ('rastreio', 'auto-preparando', 'auto-recompra'))));
 end
 $fn$;
