@@ -36,6 +36,24 @@ input,textarea{font:inherit;color:var(--txt)}
 .tab.on{background:var(--pri);border-color:var(--pri);color:#fff}
 .tcnt{display:none;margin-left:5px;min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:var(--bad);color:#fff;font-size:10.5px;line-height:17px;text-align:center}
 .tcnt.on{display:inline-block}
+.tcnt.v{background:var(--ok)}.tab.on .tcnt{background:#fff;color:var(--pri)}
+.tab.etf.sel{border-color:var(--pri);color:var(--pri)}
+.et{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;line-height:16px;padding:0 6px;border-radius:999px;border:1px solid var(--line);color:var(--mut);white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.et i{width:7px;height:7px;border-radius:50%;flex:none}
+.crow.ets{gap:4px;flex-wrap:wrap;margin-top:3px}
+.hets{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+.menu{position:fixed;z-index:30;min-width:220px;max-width:280px;max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:6px}
+.menu .mi{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:var(--txt);text-align:left;padding:8px 10px;border-radius:8px;font-size:13px;cursor:pointer}
+.menu .mi:hover{background:var(--hover)}
+.menu .mi i{width:10px;height:10px;border-radius:50%;flex:none}
+.menu .mi .q{margin-left:auto;color:var(--mut);font-size:11.5px}
+.menu .mi .ck{margin-left:auto;color:var(--pri);font-weight:700}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+.menu .nv{display:flex;gap:6px;padding:6px}
+.menu .nv input[type=text]{flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--txt);outline:0}
+.menu input[type=color],.etl input[type=color]{width:30px;height:30px;padding:0;border:1px solid var(--line);border-radius:8px;background:none;flex:none}
+.etl{display:flex;gap:8px;align-items:center;margin-top:8px}
+.etl input[type=text]{flex:1}
 .ct{font-size:10.5px;font-weight:650;padding:1px 6px;border-radius:999px;white-space:nowrap;flex:none;background:#dcf5e7;color:#0b6b3d}
 .ct.cam{background:#dceefb;color:#0b4f7a}.ct.prep{background:#fff1d6;color:#7a4a00}.ct.pag{background:var(--chip);color:var(--mut)}
 @media (prefers-color-scheme:dark){.ct{background:#123526;color:#8fe0b5}.ct.cam{background:#10304a;color:#9fd0f5}.ct.prep{background:#33270f;color:#f2cf8f}}
@@ -185,7 +203,7 @@ input,textarea{font:inherit;color:var(--txt)}
     <aside class="side">
       <div class="search">
         <input id="busca" placeholder="Buscar nome ou número" autocomplete="off">
-        <div class="tabs"><button class="tab on" data-f="abertas">Abertas</button><button class="tab" data-f="clientes">Clientes<b class="tcnt" id="tcli"></b></button><button class="tab" data-f="esperando">Esperando</button><button class="tab" data-f="todas">Todas</button></div>
+        <div class="tabs"><button class="tab on" data-f="abertas">Abertas</button><button class="tab" data-f="naolidas">Não lidas<b class="tcnt v" id="tnl"></b></button><button class="tab" data-f="clientes">Clientes<b class="tcnt" id="tcli"></b></button><button class="tab" data-f="esperando">Esperando</button><button class="tab" data-f="todas">Todas</button><button class="tab etf" id="etf">🏷 Etiquetas ▾</button></div>
       </div>
       <div class="list" id="lista"><div class="empty">Carregando…</div></div>
     </aside>
@@ -196,6 +214,13 @@ input,textarea{font:inherit;color:var(--txt)}
   </div>
 </div>
 
+<div class="ov" id="ovEtq"><div class="modal">
+  <h2>Etiquetas</h2>
+  <p>Mude o nome ou a cor e clique fora pra salvar.</p>
+  <div id="etqLista"></div>
+  <div class="etl" style="margin-top:16px"><input type="color" id="etqCor" value="#1c7ed6"><input type="text" id="etqNovo" placeholder="Nova etiqueta" maxlength="40"><button class="btn pri" id="etqAdd">Adicionar</button></div>
+  <div class="row"><button class="btn" id="etqFechar">Fechar</button></div>
+</div></div>
 <div class="ov" id="ov"><div class="modal">
   <h2>Painel do suporte</h2>
   <p>Coloque o token do painel e o seu nome (aparece nas respostas que você mandar).</p>
@@ -286,10 +311,12 @@ const nomeConv=c=>c?.nome_crm?tc(c.nome_crm):(c?.nome||fone(c?.numero)||'Sem nom
 const espMin=c=>c.espera_desde?Math.max(0,Math.floor((Date.now()-S.skew-Date.parse(c.espera_desde))/60000)):null;
 const CT={a_caminho:['📦 a caminho','cam'],preparando:['📦 preparando','prep'],cliente:['🛍 cliente',''],aguardando_pagamento:['⏳ falta pagar','pag']};
 const ctTag=c=>{const k=CT[c.crm?.situacao];if(!k)return'';const n=+c.crm.pedidos||0;return`<span class="ct ${k[1]}" title="${n?n+(n>1?' pedidos pagos':' pedido pago'):'pedido aguardando pagamento'}">${k[0]}</span>`};
+const etById=id=>(S.etq||[]).find(e=>e.id===String(id));
+function etPills(ids,cls){const l=(ids||[]).map(etById).filter(Boolean);if(!l.length)return'';return`<div class="${cls}">${l.map(e=>`<span class="et" title="${esc(e.nome)}"><i style="background:${esc(e.cor)}"></i>${esc(e.nome)}</span>`).join('')}</div>`}
 const espTxt=m=>m<60?m+' min':Math.floor(m/60)+'h'+(m%60?String(m%60).padStart(2,'0'):'');
 function renderLista(){
   const el=$('#lista');
-  if(!S.convs.length){el.innerHTML=`<div class="empty">${S.busca?'Nada encontrado':S.filtro==='esperando'?'Ninguém esperando resposta 🎉':S.filtro==='clientes'?'Nenhuma cliente com conversa aberta':S.filtro==='abertas'?'Nenhuma conversa aberta 🎉':'Nenhuma conversa ainda'}</div>`;return}
+  if(!S.convs.length){el.innerHTML=`<div class="empty">${S.busca?'Nada encontrado':S.filtro==='esperando'?'Ninguém esperando resposta 🎉':S.filtro==='clientes'?'Nenhuma cliente com conversa aberta':S.filtro==='naolidas'?'Nenhuma conversa não lida 🎉':S.filtro==='silenciadas'?'Nenhuma conversa silenciada':S.fEtq?'Nenhuma conversa com essa etiqueta':S.filtro==='abertas'?'Nenhuma conversa aberta 🎉':'Nenhuma conversa ainda'}</div>`;return}
   el.innerHTML=S.convs.map(c=>{
     const nome=nomeConv(c);
     const pre=c.ultima_direcao==='out'?'Você: ':'';
@@ -297,8 +324,8 @@ function renderLista(){
     const w=m==null?'':`<span class="wt${m>=15?' r':m>=5?' m':''}" title="Esperando resposta">⏱ ${espTxt(m)}</span>`;
     return`<div class="conv${S.sel===c.conv?' sel':''}${c.nao_lidas>0?' unread':''}" data-c="${esc(c.conv)}">
       <div class="av" style="background:${corDe(c.conv)}">${esc(ini(nome))}</div>
-      <div class="cbody"><div class="crow"><span class="cname">${esc(nome)}</span>${ctTag(c)}<span class="ctime">${quando(c.ultima_em)}</span></div>
-      <div class="crow"><span class="clast">${c.tem_botao?'':'⚠ '}${esc(pre+c.ultima_msg)}</span>${w}${c.nao_lidas>0?`<span class="badge">${c.nao_lidas}</span>`:''}${c.status==='resolvida'?'<span class="tag" style="font-size:11px;color:var(--mut)">✔</span>':''}</div></div></div>`}).join('');
+      <div class="cbody"><div class="crow"><span class="cname">${c.silenciada?'🔕 ':''}${esc(nome)}</span>${ctTag(c)}<span class="ctime">${quando(c.ultima_em)}</span></div>
+      <div class="crow"><span class="clast">${c.tem_botao?'':'⚠ '}${esc(pre+c.ultima_msg)}</span>${w}${c.nao_lidas>0?`<span class="badge">${c.nao_lidas}</span>`:''}${c.status==='resolvida'?'<span class="tag" style="font-size:11px;color:var(--mut)">✔</span>':''}</div>${etPills(c.etiquetas,'crow ets')}</div></div>`}).join('');
 }
 function pintaEspera(){
   const e=$('#esp');
@@ -310,7 +337,34 @@ function pintaEspera(){
 $('#esp').onclick=()=>{document.querySelector('.tab[data-f="esperando"]').click()};
 setInterval(()=>{if(S.convs.length){renderLista();pintaEspera()}},30000);
 $('#lista').onclick=e=>{const it=e.target.closest('.conv');if(it)abrir(it.dataset.c)};
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===b));S.filtro=b.dataset.f;S.prevNl=null;loopConvs(true)});
+function setFiltro(f){document.querySelectorAll('.tab[data-f]').forEach(x=>x.classList.toggle('on',x.dataset.f===f));S.filtro=f;S.prevNl=null;loopConvs(true)}
+document.querySelectorAll('.tab[data-f]').forEach(b=>b.onclick=()=>setFiltro(b.dataset.f));
+function pintaEtf(){const b=$('#etf'),e=S.fEtq&&etById(S.fEtq);b.classList.toggle('sel',!!e||S.filtro==='silenciadas');b.innerHTML=e?`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${esc(e.cor)};margin-right:4px"></span>${esc(e.nome)} ✕`:S.filtro==='silenciadas'?'🔕 Silenciadas ✕':'🏷 Etiquetas ▾'}
+let menuEl=null;
+function fechaMenu(){if(menuEl){menuEl.remove();menuEl=null}}
+function abreMenu(anc,html,bind){fechaMenu();const m=document.createElement('div');m.className='menu';m.innerHTML=html;document.body.appendChild(m);const r=anc.getBoundingClientRect();m.style.top=Math.min(r.bottom+4,innerHeight-m.offsetHeight-8)+'px';m.style.left=Math.max(8,Math.min(r.left,innerWidth-m.offsetWidth-8))+'px';menuEl=m;bind&&bind(m);return m}
+document.addEventListener('mousedown',e=>{if(menuEl&&!menuEl.contains(e.target)&&!e.target.closest('#etf,#betq'))fechaMenu()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')fechaMenu()});
+$('#etf').onclick=()=>{
+  if(menuEl){fechaMenu();return}
+  if(S.fEtq){S.fEtq='';pintaEtf();S.prevNl=null;loopConvs(true);return}
+  if(S.filtro==='silenciadas'){setFiltro('abertas');pintaEtf();return}
+  const l=S.etq||[];
+  abreMenu($('#etf'),(l.length?l.map(e=>`<button class="mi" data-fe="${e.id}"><i style="background:${esc(e.cor)}"></i>${esc(e.nome)}<span class="q">${e.qtd||''}</span></button>`).join(''):'<div class="mi" style="color:var(--mut)">Nenhuma etiqueta ainda</div>')+'<hr><button class="mi" data-fs="1">🔕 Ver silenciadas</button><button class="mi" data-ge="1">⚙️ Gerenciar etiquetas</button>',m=>{
+    m.onclick=e=>{const a=e.target.closest('[data-fe]'),sl=e.target.closest('[data-fs]'),g=e.target.closest('[data-ge]');
+      if(a){S.fEtq=a.dataset.fe;fechaMenu();pintaEtf();S.prevNl=null;loopConvs(true)}
+      else if(sl){fechaMenu();S.fEtq='';setFiltro('silenciadas');pintaEtf()}
+      else if(g){fechaMenu();abreEtq()}}})
+};
+function abreEtq(){$('#ovEtq').classList.add('on');pintaEtq()}
+function pintaEtq(){$('#etqLista').innerHTML=(S.etq||[]).map(e=>`<div class="etl"><input type="color" data-ec="${e.id}" value="${esc(e.cor)}"><input type="text" data-en="${e.id}" value="${esc(e.nome)}" maxlength="40"><button class="btn sm" data-ed="${e.id}" title="Apagar">🗑</button></div>`).join('')||'<p>Nenhuma etiqueta ainda.</p>'}
+async function salvaEt(id,nome,cor){try{const j=await api('etiqueta_salvar',{id,nome,cor});if(j.ok===false)throw new Error(j.erro);await recarregaEt()}catch(e){toast('Erro: '+e.message)}}
+async function recarregaEt(){await loopConvs(true);if($('#ovEtq').classList.contains('on'))pintaEtq();if(S.chat)renderChat()}
+$('#etqLista').addEventListener('change',e=>{const c=e.target.closest('[data-ec]'),n=e.target.closest('[data-en]');const id=(c||n)?.dataset.ec||(c||n)?.dataset.en;if(!id)return;const nome=$(`[data-en="${id}"]`).value.trim(),cor=$(`[data-ec="${id}"]`).value;if(nome)salvaEt(id,nome,cor)});
+$('#etqLista').addEventListener('click',async e=>{const b=e.target.closest('[data-ed]');if(!b)return;const et=etById(b.dataset.ed);if(!confirm(`Apagar a etiqueta "${et?.nome}"? Ela sai de todas as conversas.`))return;try{await api('etiqueta_apagar',{id:b.dataset.ed});if(S.fEtq===b.dataset.ed)S.fEtq='';await recarregaEt()}catch(err){toast('Erro: '+err.message)}});
+$('#etqAdd').onclick=()=>{const n=$('#etqNovo').value.trim();if(!n)return;salvaEt('',n,$('#etqCor').value);$('#etqNovo').value=''};
+$('#etqNovo').onkeydown=e=>{if(e.key==='Enter')$('#etqAdd').click()};
+$('#etqFechar').onclick=()=>$('#ovEtq').classList.remove('on');
 let tBusca;$('#busca').oninput=e=>{clearTimeout(tBusca);tBusca=setTimeout(()=>{S.busca=e.target.value.trim();loopConvs(true)},300)};
 
 let tConvs,convsBusy=false,piscaT=null;
@@ -328,13 +382,13 @@ async function loopConvs(now){
   if(!convsBusy){
     convsBusy=true;
     try{
-      const j=await api('convs',{filtro:S.filtro,busca:S.busca});
+      const j=await api('convs',{filtro:S.filtro,busca:S.busca,etiqueta:S.fEtq||''});
       if(j.agora)S.skew=Date.now()-Date.parse(j.agora);
-      S.convs=j.convs||[];S.esperando=j.esperando||0;{const t=$('#tcli'),n=j.clientes_esperando||0;t.textContent=n;t.classList.toggle('on',n>0);t.title=n+' cliente(s) esperando resposta'}
+      S.convs=j.convs||[];S.esperando=j.esperando||0;S.etq=j.etiquetas||S.etq||[];pintaEtf();{const t=$('#tnl'),n=j.convs_nao_lidas||0;t.textContent=n;t.classList.toggle('on',n>0)}{const t=$('#tcli'),n=j.clientes_esperando||0;t.textContent=n;t.classList.toggle('on',n>0);t.title=n+' cliente(s) esperando resposta'}
       renderLista();statusCel(j.aparelhos);pintaEspera();
       const un=j.nao_lidas||0;
       const fora=document.hidden||!document.hasFocus();
-      if(S.prevNl){const novas=S.convs.filter(c=>c.nao_lidas>(S.prevNl[c.conv]||0)&&c.ultima_direcao==='in');if(novas.length){bip();if(fora)novas.slice(0,3).forEach(notifica)}}
+      if(S.prevNl){const novas=S.convs.filter(c=>!c.silenciada&&c.nao_lidas>(S.prevNl[c.conv]||0)&&c.ultima_direcao==='in');if(novas.length){bip();if(fora)novas.slice(0,3).forEach(notifica)}}
       else if(S.lastUnread>=0&&un>S.lastUnread)bip();
       S.prevNl=Object.fromEntries(S.convs.map(c=>[c.conv,c.nao_lidas]));
       S.lastUnread=un;
@@ -354,12 +408,13 @@ function abrir(conv){
   const c=S.convs.find(x=>x.conv===conv);
   if(c)c.nao_lidas=0;
   renderLista();
-  $('#chat').innerHTML=`<div class="chead"><button class="icon back" id="voltar">←</button><div class="av" style="background:${corDe(conv)};flex-basis:36px;height:36px">${esc(ini(nomeConv(c)))}</div><div><div class="nm" id="hnome">${esc(nomeConv(c))}</div><div class="num" id="hnum">${esc(fone(c?.numero))}</div></div><span class="sp"></span><button class="btn sm" id="copiar" title="Copiar número">📋</button><button class="btn sm" id="resolver"></button><button class="btn sm" id="vcrm" title="Ficha da cliente">👤</button></div>
+  $('#chat').innerHTML=`<div class="chead"><button class="icon back" id="voltar">←</button><div class="av" style="background:${corDe(conv)};flex-basis:36px;height:36px">${esc(ini(nomeConv(c)))}</div><div><div class="nm" id="hnome">${esc(nomeConv(c))}</div><div class="num" id="hnum">${esc(fone(c?.numero))}</div><div class="hets" id="hets"></div></div><span class="sp"></span><button class="btn sm" id="betq" title="Etiquetas, não lida, silenciar">🏷 ▾</button><button class="btn sm" id="copiar" title="Copiar número">📋</button><button class="btn sm" id="resolver"></button><button class="btn sm" id="vcrm" title="Ficha da cliente">👤</button></div>
   <div class="chatwrap"><div id="bn"></div><div class="msgs" id="msgs"><div class="empty">Carregando…</div></div>
   <div class="qr" id="qr"></div>
   <div class="fprev" id="fprev"><img id="fimg" alt=""><span class="tx" id="ftx"></span><button class="btn sm" id="fx">✕ tirar foto</button></div>
   <div class="comp"><button class="icon" id="bqr" title="Respostas rápidas (ou digite /)">⚡</button><button class="icon" id="bfoto" title="Mandar foto (ou cole com Ctrl+V)">📎</button><input type="file" id="ffile" accept="image/*" hidden><textarea id="txt" rows="1" placeholder="Digite a resposta… (/ pra respostas rápidas)"></textarea><button class="btn pri" id="env">Enviar</button></div></div>`;
   $('#voltar').onclick=()=>{$('#main').classList.remove('open','crmon');S.sel=null;renderLista()};
+  $('#betq').onclick=()=>{if(menuEl){fechaMenu();return}menuConv(conv)};
   $('#copiar').onclick=()=>{const n=S.chat?.conversa?.numero||c?.numero;if(n){navigator.clipboard?.writeText(n);toast('Número copiado')}else toast('Sem número')};
   $('#resolver').onclick=async()=>{const st=S.chat?.conversa?.status==='resolvida'?'aberta':'resolvida';try{await api('status',{conv,status:st});toast(st==='resolvida'?'Marcada como resolvida':'Reaberta');if(S.chat)S.chat.conversa.status=st;pintaResolver();loopConvs(true)}catch(e){toast('Erro: '+e.message)}};
   $('#vcrm').onclick=()=>{const m=$('#main');if(innerWidth<=1100){m.classList.toggle('crmon')}else{S.crmOpen=!S.crmOpen;LS.set('crm',S.crmOpen);m.classList.toggle('nocrm',!S.crmOpen)}};
@@ -458,6 +513,19 @@ $('#qSalvar').onclick=async()=>{
   try{const j=await api('resposta_salvar',{id:S.qrEdit,atalho,texto});if(!j.ok){$('#qMsg').textContent=j.erro||'Erro';return}await carregaRespostas();$('#ovq').classList.remove('on');toast('Resposta rápida salva')}catch(e){$('#qMsg').textContent='Sem conexão com o n8n'}
 };
 
+function menuConv(conv){
+  const cv=S.chat?.conversa||S.convs.find(x=>x.conv===conv)||{};const tem=new Set(cv.etiquetas||[]);
+  abreMenu($('#betq'),(S.etq||[]).map(e=>`<button class="mi" data-te="${e.id}"><i style="background:${esc(e.cor)}"></i>${esc(e.nome)}${tem.has(e.id)?'<span class="ck">✓</span>':''}</button>`).join('')+
+    `<div class="nv"><input type="color" id="mnCor" value="#1c7ed6"><input type="text" id="mnNome" placeholder="Nova etiqueta" maxlength="40"></div><hr><button class="mi" data-nl="1">● Marcar como não lida</button><button class="mi" data-sil="1">${cv.silenciada?'🔔 Tirar do silêncio':'🔕 Silenciar conversa'}</button>`,m=>{
+    m.onclick=async e=>{
+      const t=e.target.closest('[data-te]');
+      if(t){const id=t.dataset.te,on=!tem.has(id);try{await api('conv_etiqueta',{conv,etiqueta:id,on});const l=new Set(cv.etiquetas||[]);on?l.add(id):l.delete(id);cv.etiquetas=[...l];const lc=S.convs.find(x=>x.conv===conv);if(lc)lc.etiquetas=cv.etiquetas;if(S.chat?.conversa)S.chat.conversa.etiquetas=cv.etiquetas;fechaMenu();renderLista();renderChat();loopConvs(true)}catch(err){toast('Erro: '+err.message)}return}
+      if(e.target.closest('[data-nl]')){fechaMenu();try{await api('nao_lida',{conv});$('#main').classList.remove('open','crmon');S.sel=null;S.chat=null;$('#chat').innerHTML='<div class="ph"><div><div style="font-size:42px">💬</div><div style="margin-top:8px">Escolha uma conversa</div></div></div>';loopConvs(true)}catch(err){toast('Erro: '+err.message)}return}
+      if(e.target.closest('[data-sil]')){fechaMenu();const on=!cv.silenciada;try{await api('silenciar',{conv,on});cv.silenciada=on;if(S.chat?.conversa)S.chat.conversa.silenciada=on;toast(on?'Silenciada: não aparece mais em Abertas e não notifica':'Conversa de volta pras abertas');loopConvs(true)}catch(err){toast('Erro: '+err.message)}}
+    };
+    const inp=m.querySelector('#mnNome');inp.onkeydown=async e=>{if(e.key!=='Enter')return;const n=inp.value.trim();if(!n)return;try{await api('etiqueta_salvar',{nome:n,cor:m.querySelector('#mnCor').value});const j=await api('convs',{filtro:S.filtro,busca:S.busca,etiqueta:S.fEtq||''});S.etq=j.etiquetas||S.etq;const nova=S.etq.find(x=>x.nome===n);if(nova){await api('conv_etiqueta',{conv,etiqueta:nova.id,on:true});cv.etiquetas=[...new Set([...(cv.etiquetas||[]),nova.id])];if(S.chat?.conversa)S.chat.conversa.etiquetas=cv.etiquetas}fechaMenu();renderChat();loopConvs(true)}catch(err){toast('Erro: '+err.message)}};
+  });
+}
 function pintaResolver(){const b=$('#resolver');if(b)b.textContent=S.chat?.conversa?.status==='resolvida'?'Reabrir':'✔ Resolver'}
 
 let tChat,chatBusy=false;
@@ -515,6 +583,7 @@ function renderChat(){
   $('#hnome').textContent=nomeConv(c);
   $('#hnum').textContent=(fone(c.numero)||'sem número')+(c.nome_crm&&c.nome&&!/^\+?[\d\s()-]+$/.test(c.nome)&&c.nome!==c.nome_crm?` · no celular: ${c.nome}`:'');
   pintaResolver();
+  {const h=$('#hets');if(h)h.innerHTML=etPills(c.etiquetas,'hets').replace(/^<div class="hets">|<\/div>$/g,'')}
   $('#bn').innerHTML=c.tem_botao?(S.celOk===false?'<div class="banner">O celular do suporte está com problema ou offline — as respostas ficam na fila até ele voltar.</div>':''):'<div class="banner">⚠ Não tem notificação dessa conversa no celular agora. A resposta só sai quando a cliente mandar outra mensagem (ou responda direto no celular).</div>';
   const ms=[...S.chat.mensagens];
   const ids=new Set(ms.map(m=>m.id));

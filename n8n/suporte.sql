@@ -22,6 +22,7 @@ create index if not exists conversas_ultima_idx on suporte.conversas (ultima_em 
 alter table suporte.conversas add column if not exists nome_crm text;
 alter table suporte.conversas add column if not exists crm jsonb;
 alter table suporte.conversas add column if not exists crm_em timestamptz;
+alter table suporte.conversas add column if not exists silenciada boolean not null default false;
 
 create table if not exists suporte.mensagens (
   id bigserial primary key,
@@ -59,6 +60,28 @@ create table if not exists suporte.config (
   chave text primary key,
   valor text not null
 );
+
+create table if not exists suporte.etiquetas (
+  id bigserial primary key,
+  nome text not null unique,
+  cor text not null default '#6b7a89',
+  ordem int not null default 100,
+  criado_em timestamptz not null default now()
+);
+
+create table if not exists suporte.conversa_etiquetas (
+  conv text not null references suporte.conversas(conv) on delete cascade on update cascade,
+  etiqueta_id bigint not null references suporte.etiquetas(id) on delete cascade,
+  criado_em timestamptz not null default now(),
+  primary key (conv, etiqueta_id)
+);
+create index if not exists conversa_etiquetas_et_idx on suporte.conversa_etiquetas (etiqueta_id);
+
+insert into suporte.etiquetas (nome, cor, ordem)
+select v.nome, v.cor, v.ordem
+  from (values ('Atraso na entrega', '#e8590c', 10), ('Troca ou defeito', '#d6336c', 20), ('Reembolso', '#7048e8', 30),
+               ('Aguardando cliente', '#1c7ed6', 40), ('Resolver amanhã', '#f59f00', 50), ('Venda', '#2f9e44', 60)) v(nome, cor, ordem)
+ where not exists (select 1 from suporte.etiquetas);
 
 create table if not exists suporte.respostas (
   id bigserial primary key,
@@ -398,7 +421,9 @@ begin
     select coalesce(jsonb_agg(jsonb_build_object(
              'conv', c.conv, 'nome', c.nome, 'numero', c.numero, 'ultima_msg', c.ultima_msg,
              'ultima_direcao', c.ultima_direcao, 'ultima_em', c.ultima_em, 'nao_lidas', c.nao_lidas,
-             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde, 'nome_crm', c.nome_crm, 'crm', c.crm)
+             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde, 'nome_crm', c.nome_crm, 'crm', c.crm, 'silenciada', c.silenciada,
+             'etiquetas', (select coalesce(jsonb_agg(ce.etiqueta_id::text order by e.ordem, e.nome), '[]'::jsonb)
+                             from suporte.conversa_etiquetas ce join suporte.etiquetas e on e.id = ce.etiqueta_id where ce.conv = c.conv))
              order by case when coalesce(b->>'filtro', '') in ('esperando', 'clientes') then c.espera_desde end asc nulls last, c.ultima_em desc), '[]'::jsonb)
       into v_r
       from (
@@ -410,9 +435,14 @@ begin
                ) end as espera_desde
           from suporte.conversas c
          where (coalesce(b->>'filtro', 'abertas') = 'todas'
-                or (coalesce(b->>'filtro', 'abertas') = 'abertas' and c.status = 'aberta')
-                or (b->>'filtro' = 'esperando' and c.status = 'aberta' and c.ultima_direcao = 'in')
-                or (b->>'filtro' = 'clientes' and c.status = 'aberta' and coalesce((c.crm->>'pedidos')::int, 0) > 0))
+                or (b->>'filtro' = 'silenciadas' and c.silenciada)
+                or (not c.silenciada and (
+                       (coalesce(b->>'filtro', 'abertas') = 'abertas' and c.status = 'aberta')
+                    or (b->>'filtro' = 'naolidas' and c.nao_lidas > 0)
+                    or (b->>'filtro' = 'esperando' and c.status = 'aberta' and c.ultima_direcao = 'in')
+                    or (b->>'filtro' = 'clientes' and c.status = 'aberta' and coalesce((c.crm->>'pedidos')::int, 0) > 0))))
+           and (coalesce(b->>'etiqueta', '') !~ '^\d+$'
+                or exists (select 1 from suporte.conversa_etiquetas ce where ce.conv = c.conv and ce.etiqueta_id = (b->>'etiqueta')::bigint))
            and (v_busca is null or c.nome ilike '%' || v_busca || '%' or coalesce(c.nome_crm, '') ilike '%' || v_busca || '%' or c.numero like '%' || regexp_replace(v_busca, '\D', '', 'g') || '%' and regexp_replace(v_busca, '\D', '', 'g') <> '')
          order by c.ultima_em desc
          limit 300
@@ -424,9 +454,13 @@ begin
       'aparelhos', (select coalesce(jsonb_agg(jsonb_build_object('aparelho', a.aparelho, 'visto_em', a.visto_em,
                       'segundos', extract(epoch from now() - a.visto_em)::int, 'dados', a.dados)), '[]'::jsonb)
                       from suporte.aparelhos a where a.aparelho <> '_painel'),
-      'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta'),
-      'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in'),
-      'clientes_esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and coalesce((crm->>'pedidos')::int, 0) > 0));
+      'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta' and not silenciada),
+      'convs_nao_lidas', (select count(*) from suporte.conversas where nao_lidas > 0 and not silenciada),
+      'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada),
+      'clientes_esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada and coalesce((crm->>'pedidos')::int, 0) > 0),
+      'etiquetas', (select coalesce(jsonb_agg(jsonb_build_object('id', e.id::text, 'nome', e.nome, 'cor', e.cor,
+                      'qtd', (select count(*) from suporte.conversa_etiquetas ce join suporte.conversas cc on cc.conv = ce.conv where ce.etiqueta_id = e.id and cc.status = 'aberta'))
+                      order by e.ordem, e.nome), '[]'::jsonb) from suporte.etiquetas e));
   end if;
 
   if v_acao = 'respostas' then
@@ -500,7 +534,8 @@ begin
       ) s;
     return jsonb_build_object(
       'ok', true,
-      'conversa', jsonb_build_object('conv', v_c.conv, 'nome', v_c.nome, 'nome_crm', v_c.nome_crm, 'numero', v_c.numero, 'status', v_c.status, 'tem_botao', v_c.tem_botao),
+      'conversa', jsonb_build_object('conv', v_c.conv, 'nome', v_c.nome, 'nome_crm', v_c.nome_crm, 'numero', v_c.numero, 'status', v_c.status, 'tem_botao', v_c.tem_botao, 'silenciada', v_c.silenciada,
+                                  'etiquetas', (select coalesce(jsonb_agg(ce.etiqueta_id::text), '[]'::jsonb) from suporte.conversa_etiquetas ce where ce.conv = v_c.conv)),
       'mensagens', v_r,
       'cliente', case when coalesce((b->>'crm')::boolean, true) then suporte.cliente_crm(v_c.numero) end);
   end if;
@@ -546,6 +581,49 @@ begin
     if coalesce(b->>'id', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
     update suporte.mensagens set status = 'cancelada', atualizado_em = now()
      where id = (b->>'id')::bigint and direcao = 'out' and status in ('pendente', 'falhou', 'sem_notificacao');
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'nao_lida' then
+    update suporte.conversas set nao_lidas = greatest(nao_lidas, 1) where conv = v_conv;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'silenciar' then
+    update suporte.conversas set silenciada = coalesce((b->>'on')::boolean, true),
+           nao_lidas = case when coalesce((b->>'on')::boolean, true) then 0 else nao_lidas end
+     where conv = v_conv;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'conv_etiqueta' then
+    if coalesce(b->>'etiqueta', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
+    if coalesce((b->>'on')::boolean, true) then
+      insert into suporte.conversa_etiquetas (conv, etiqueta_id)
+      select v_conv, e.id from suporte.etiquetas e where e.id = (b->>'etiqueta')::bigint and exists (select 1 from suporte.conversas where conv = v_conv)
+      on conflict do nothing;
+    else
+      delete from suporte.conversa_etiquetas where conv = v_conv and etiqueta_id = (b->>'etiqueta')::bigint;
+    end if;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'etiqueta_salvar' then
+    v_txt := left(trim(coalesce(b->>'nome', '')), 40);
+    if v_txt = '' then return jsonb_build_object('ok', false, 'erro', 'nome_vazio'); end if;
+    if coalesce(b->>'id', '') ~ '^\d+$' then
+      update suporte.etiquetas set nome = v_txt, cor = coalesce(nullif(b->>'cor', ''), cor) where id = (b->>'id')::bigint;
+    else
+      insert into suporte.etiquetas (nome, cor, ordem)
+      values (v_txt, coalesce(nullif(b->>'cor', ''), '#6b7a89'), coalesce((select max(ordem) from suporte.etiquetas), 0) + 10)
+      on conflict (nome) do nothing;
+    end if;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'etiqueta_apagar' then
+    if coalesce(b->>'id', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
+    delete from suporte.etiquetas where id = (b->>'id')::bigint;
     return jsonb_build_object('ok', true);
   end if;
 

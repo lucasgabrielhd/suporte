@@ -30,6 +30,9 @@ atendente digita ─▶ painel ─▶ fila no Postgres ─▶ app busca em wa-su
 - **Rastreio ao vivo:** o card consulta a Frenet (`tracking/trackinginfo`, credencial *Frenet Face Clean*) e mostra o último evento + histórico. Cache de 20 min no Postgres.
 - **Respostas rápidas no banco** (`suporte.respostas`), compartilhadas entre atendentes, com variáveis `{nome}` `{atendente}` `{pedido}` `{rastreio}` `{link_rastreio}` `{ultima_atualizacao}` `{previsao}` `{status}` `{valor}` `{produtos}` `{transportadora}` `{aviso_envio}`. Linha com variável vazia some.
 - **Aba Clientes:** conversas abertas de quem já tem pedido pago no CRM, quem espera há mais tempo primeiro. A etiqueta na lista mostra 📦 a caminho, 📦 preparando, 🛍 cliente ou ⏳ falta pagar, e o número vermelho na aba conta clientes esperando resposta. Atualiza a cada 3h (ou na hora, quando ela manda mensagem).
+- **Não lidas:** aba com as conversas que ninguém abriu desde a última mensagem (diferente de Esperando, que é quem ainda não teve resposta). Dá pra marcar uma conversa como não lida pelo 🏷 ▾.
+- **Etiquetas:** igual WhatsApp Business. Pelo 🏷 ▾ do chat marca/desmarca e cria etiqueta nova; o chip "🏷 Etiquetas" da lista filtra e tem "Gerenciar etiquetas" (nome, cor, apagar).
+- **Silenciar:** tira a conversa (ex.: TikTok) de Abertas, Não lidas, Esperando e das notificações. Fica em "Ver silenciadas" e em Todas.
 - **Esperando resposta:** cronômetro em cada conversa (laranja ≥5 min, vermelho ≥15 min), aba "Esperando" (mais antiga primeiro) e contador no topo.
 - **Notificação do Windows** quando chega mensagem com o painel minimizado (o navegador pede permissão no primeiro clique).
 - **Ocorrências de entrega:** o card mostra o que o Painel de Ocorrências tem pra cada rastreio da cliente (problema, dias parado, Frenet acionada, cliente avisada, resolvida), lendo as chaves `painel:*:<código>` no Redis.
