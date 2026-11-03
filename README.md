@@ -30,6 +30,11 @@ atendente digita ─▶ painel ─▶ fila no Postgres ─▶ app busca em wa-su
 - **Rastreio ao vivo:** o card consulta a Frenet (`tracking/trackinginfo`, credencial *Frenet Face Clean*) e mostra o último evento + histórico. Cache de 20 min no Postgres.
 - **Respostas rápidas no banco** (`suporte.respostas`), compartilhadas entre atendentes, com variáveis `{nome}` `{atendente}` `{pedido}` `{rastreio}` `{link_rastreio}` `{ultima_atualizacao}` `{previsao}` `{status}` `{valor}` `{produtos}` `{transportadora}` `{aviso_envio}`. Linha com variável vazia some.
 - **Aba Clientes:** conversas abertas de quem já tem pedido pago no CRM, quem espera há mais tempo primeiro. A etiqueta na lista mostra 📦 a caminho, 📦 preparando, 🛍 cliente ou ⏳ falta pagar, e o número vermelho na aba conta clientes esperando resposta. Atualiza a cada 3h (ou na hora, quando ela manda mensagem).
+- **IA no suporte:** depois de responder o app, o fluxo espera 15s (junta mensagens seguidas) e decide:
+  - cliente que só pede rastreio → manda o modelo `/rastreio` **1x por código**; pedido faturado sem código → `/auto-preparando` **1x por pedido**;
+  - quem não comprou e veio do anúncio → **Fernanda** (pré-venda, gpt-4o-mini);
+  - qualquer problema (atraso, troca, reação, cobrança, taxa, golpe, foto, falou de pedido sem compra no número, pediu atendente) → **não responde**, marca a etiqueta *Atendimento humano* e trava a IA na conversa por 7 dias;
+  - atendente respondeu pelo painel → IA fora da conversa por 24h. Liga/desliga e dias de trava no ⚙️; travar/liberar por conversa no 🏷 ▾.
 - **Não lidas:** aba com as conversas que ninguém abriu desde a última mensagem (diferente de Esperando, que é quem ainda não teve resposta). Dá pra marcar uma conversa como não lida pelo 🏷 ▾.
 - **Etiquetas:** igual WhatsApp Business. Pelo 🏷 ▾ do chat marca/desmarca e cria etiqueta nova; o chip "🏷 Etiquetas" da lista filtra e tem "Gerenciar etiquetas" (nome, cor, apagar).
 - **Silenciar:** tira a conversa (ex.: TikTok) de Abertas, Não lidas, Esperando e das notificações. Fica em "Ver silenciadas" e em Todas.

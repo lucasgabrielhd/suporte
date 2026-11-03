@@ -134,6 +134,7 @@ input,textarea{font:inherit;color:var(--txt)}
 .modal label{display:block;font-size:12px;color:var(--mut);margin:10px 0 4px}
 .modal input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);outline:0}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.modal label.ck{display:flex;gap:8px;align-items:center;color:var(--txt);font-size:13px;margin:8px 0}.modal label.ck input[type=checkbox]{width:auto}
 .modal .msg{color:var(--bad);font-size:12.5px;margin-top:8px;min-height:16px}
 .zoom{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;place-items:center;z-index:30;cursor:zoom-out}
 .zoom.on{display:grid}
@@ -227,6 +228,12 @@ input,textarea{font:inherit;color:var(--txt)}
   <label>Seu nome</label><input id="fNome" placeholder="ex.: Ana" autocomplete="name">
   <label>Token do painel</label><input id="fTok" type="password" autocomplete="off">
   <label>Endereço do n8n</label><input id="fUrl">
+  <div id="fIa" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:none">
+    <label style="margin-top:0">IA no WhatsApp do suporte (vale pra todas)</label>
+    <label class="ck"><input type="checkbox" id="iaR"> Mandar rastreio/status sozinha pra cliente que só pede o código</label>
+    <label class="ck"><input type="checkbox" id="iaV"> Fernanda responde quem ainda não comprou (lead do anúncio)</label>
+    <label class="ck">Quando tiver problema, IA fica fora da conversa por <input type="number" id="iaD" min="1" max="60" style="width:64px;padding:4px 6px;display:inline-block"> dias</label>
+  </div>
   <div class="msg" id="fMsg"></div>
   <div class="row"><button class="btn" id="fCancel">Cancelar</button><button class="btn pri" id="fSalvar">Entrar</button></div>
 </div></div>
@@ -272,7 +279,7 @@ async function api(acao,extra={}){
   return j;
 }
 
-function abrirCfg(msg=''){$('#fNome').value=S.nome;$('#fTok').value=S.tok;$('#fUrl').value=S.url;$('#fMsg').textContent=msg;$('#ov').classList.add('on');setTimeout(()=>(S.nome?$('#fTok'):$('#fNome')).focus(),50)}
+function abrirCfg(msg=''){const c=S.iaCfg;$('#fIa').style.display=c?'':'none';if(c){$('#iaR').checked=c.ia_rastreio==='sim';$('#iaV').checked=c.ia_venda==='sim';$('#iaD').value=c.ia_trava_dias||7}$('#fNome').value=S.nome;$('#fTok').value=S.tok;$('#fUrl').value=S.url;$('#fMsg').textContent=msg;$('#ov').classList.add('on');setTimeout(()=>(S.nome?$('#fTok'):$('#fNome')).focus(),50)}
 $('#cfg').onclick=()=>abrirCfg();
 $('#fCancel').onclick=()=>{if(S.tok)$('#ov').classList.remove('on')};
 $('#fSalvar').onclick=async()=>{
@@ -280,7 +287,7 @@ $('#fSalvar').onclick=async()=>{
   if(!S.nome||!S.tok){$('#fMsg').textContent='Preencha nome e token';return}
   LS.set('nome',S.nome);LS.set('tok',S.tok);LS.set('url',S.url);
   $('#fMsg').textContent='Conectando…';
-  try{await api('convs',{filtro:S.filtro});$('#ov').classList.remove('on');loopConvs(true);carregaRespostas()}catch(e){if(e.message!=='nao_autorizado')$('#fMsg').textContent='Não conectou: '+e.message}
+  try{if(S.iaCfg){const d=Math.max(1,Math.min(60,parseInt($('#iaD').value)||7));await api('ia_config',{rastreio:$('#iaR').checked,venda:$('#iaV').checked,trava_dias:String(d)});S.iaCfg={ia_rastreio:$('#iaR').checked?'sim':'nao',ia_venda:$('#iaV').checked?'sim':'nao',ia_trava_dias:String(d)}}await api('convs',{filtro:S.filtro});$('#ov').classList.remove('on');loopConvs(true);carregaRespostas()}catch(e){if(e.message!=='nao_autorizado')$('#fMsg').textContent='Não conectou: '+e.message}
 };
 $('#fTok').onkeydown=e=>{if(e.key==='Enter')$('#fSalvar').click()};
 $('#som').onclick=()=>{S.som=!S.som;LS.set('som',S.som);$('#som').textContent=S.som?'🔔':'🔕';toast(S.som?'Som ligado':'Som desligado')};
@@ -384,7 +391,7 @@ async function loopConvs(now){
     try{
       const j=await api('convs',{filtro:S.filtro,busca:S.busca,etiqueta:S.fEtq||''});
       if(j.agora)S.skew=Date.now()-Date.parse(j.agora);
-      S.convs=j.convs||[];S.esperando=j.esperando||0;S.etq=j.etiquetas||S.etq||[];pintaEtf();{const t=$('#tnl'),n=j.convs_nao_lidas||0;t.textContent=n;t.classList.toggle('on',n>0)}{const t=$('#tcli'),n=j.clientes_esperando||0;t.textContent=n;t.classList.toggle('on',n>0);t.title=n+' cliente(s) esperando resposta'}
+      S.convs=j.convs||[];S.esperando=j.esperando||0;S.etq=j.etiquetas||S.etq||[];if(j.ia_cfg)S.iaCfg=j.ia_cfg;pintaEtf();{const t=$('#tnl'),n=j.convs_nao_lidas||0;t.textContent=n;t.classList.toggle('on',n>0)}{const t=$('#tcli'),n=j.clientes_esperando||0;t.textContent=n;t.classList.toggle('on',n>0);t.title=n+' cliente(s) esperando resposta'}
       renderLista();statusCel(j.aparelhos);pintaEspera();
       const un=j.nao_lidas||0;
       const fora=document.hidden||!document.hasFocus();
@@ -513,13 +520,15 @@ $('#qSalvar').onclick=async()=>{
   try{const j=await api('resposta_salvar',{id:S.qrEdit,atalho,texto});if(!j.ok){$('#qMsg').textContent=j.erro||'Erro';return}await carregaRespostas();$('#ovq').classList.remove('on');toast('Resposta rápida salva')}catch(e){$('#qMsg').textContent='Sem conexão com o n8n'}
 };
 
+const iaTravada=c=>!!(c&&c.ia_trava_ate&&Date.parse(c.ia_trava_ate)>Date.now());
 function menuConv(conv){
   const cv=S.chat?.conversa||S.convs.find(x=>x.conv===conv)||{};const tem=new Set(cv.etiquetas||[]);
   abreMenu($('#betq'),(S.etq||[]).map(e=>`<button class="mi" data-te="${e.id}"><i style="background:${esc(e.cor)}"></i>${esc(e.nome)}${tem.has(e.id)?'<span class="ck">✓</span>':''}</button>`).join('')+
-    `<div class="nv"><input type="color" id="mnCor" value="#1c7ed6"><input type="text" id="mnNome" placeholder="Nova etiqueta" maxlength="40"></div><hr><button class="mi" data-nl="1">● Marcar como não lida</button><button class="mi" data-sil="1">${cv.silenciada?'🔔 Tirar do silêncio':'🔕 Silenciar conversa'}</button>`,m=>{
+    `<div class="nv"><input type="color" id="mnCor" value="#1c7ed6"><input type="text" id="mnNome" placeholder="Nova etiqueta" maxlength="40"></div><hr><button class="mi" data-ia="1">${iaTravada(cv)?'🤖 Liberar a IA nesta conversa':'🔒 Travar a IA nesta conversa ('+(S.iaCfg?.ia_trava_dias||7)+' dias)'}</button><button class="mi" data-nl="1">● Marcar como não lida</button><button class="mi" data-sil="1">${cv.silenciada?'🔔 Tirar do silêncio':'🔕 Silenciar conversa'}</button>`,m=>{
     m.onclick=async e=>{
       const t=e.target.closest('[data-te]');
       if(t){const id=t.dataset.te,on=!tem.has(id);try{await api('conv_etiqueta',{conv,etiqueta:id,on});const l=new Set(cv.etiquetas||[]);on?l.add(id):l.delete(id);cv.etiquetas=[...l];const lc=S.convs.find(x=>x.conv===conv);if(lc)lc.etiquetas=cv.etiquetas;if(S.chat?.conversa)S.chat.conversa.etiquetas=cv.etiquetas;fechaMenu();renderLista();renderChat();loopConvs(true)}catch(err){toast('Erro: '+err.message)}return}
+      if(e.target.closest('[data-ia]')){fechaMenu();const trav=iaTravada(cv);const dias=trav?0:(+(S.iaCfg?.ia_trava_dias)||7);try{await api('ia_trava',{conv,dias:String(dias)});cv.ia_trava_ate=dias?new Date(Date.now()+dias*864e5).toISOString():null;if(S.chat?.conversa)S.chat.conversa.ia_trava_ate=cv.ia_trava_ate;toast(dias?`IA travada nesta conversa por ${dias} dias`:'IA liberada nesta conversa');renderChat();loopConvs(true)}catch(err){toast('Erro: '+err.message)}return}
       if(e.target.closest('[data-nl]')){fechaMenu();try{await api('nao_lida',{conv});$('#main').classList.remove('open','crmon');S.sel=null;S.chat=null;$('#chat').innerHTML='<div class="ph"><div><div style="font-size:42px">💬</div><div style="margin-top:8px">Escolha uma conversa</div></div></div>';loopConvs(true)}catch(err){toast('Erro: '+err.message)}return}
       if(e.target.closest('[data-sil]')){fechaMenu();const on=!cv.silenciada;try{await api('silenciar',{conv,on});cv.silenciada=on;if(S.chat?.conversa)S.chat.conversa.silenciada=on;toast(on?'Silenciada: não aparece mais em Abertas e não notifica':'Conversa de volta pras abertas');loopConvs(true)}catch(err){toast('Erro: '+err.message)}}
     };
@@ -583,7 +592,7 @@ function renderChat(){
   $('#hnome').textContent=nomeConv(c);
   $('#hnum').textContent=(fone(c.numero)||'sem número')+(c.nome_crm&&c.nome&&!/^\+?[\d\s()-]+$/.test(c.nome)&&c.nome!==c.nome_crm?` · no celular: ${c.nome}`:'');
   pintaResolver();
-  {const h=$('#hets');if(h)h.innerHTML=etPills(c.etiquetas,'hets').replace(/^<div class="hets">|<\/div>$/g,'')}
+  {const h=$('#hets');if(h)h.innerHTML=etPills(c.etiquetas,'hets').replace(/^<div class="hets">|<\/div>$/g,'')+(iaTravada(c)?`<span class="et" title="A IA não responde esta conversa">🔒 IA fora até ${new Date(c.ia_trava_ate).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</span>`:'')}
   $('#bn').innerHTML=c.tem_botao?(S.celOk===false?'<div class="banner">O celular do suporte está com problema ou offline — as respostas ficam na fila até ele voltar.</div>':''):'<div class="banner">⚠ Não tem notificação dessa conversa no celular agora. A resposta só sai quando a cliente mandar outra mensagem (ou responda direto no celular).</div>';
   const ms=[...S.chat.mensagens];
   const ids=new Set(ms.map(m=>m.id));

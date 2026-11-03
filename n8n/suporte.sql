@@ -23,6 +23,7 @@ alter table suporte.conversas add column if not exists nome_crm text;
 alter table suporte.conversas add column if not exists crm jsonb;
 alter table suporte.conversas add column if not exists crm_em timestamptz;
 alter table suporte.conversas add column if not exists silenciada boolean not null default false;
+alter table suporte.conversas add column if not exists ia_trava_ate timestamptz;
 
 create table if not exists suporte.mensagens (
   id bigserial primary key,
@@ -132,6 +133,7 @@ declare
   v_id bigint;
   v_novas int := 0;
   v_resumo text := '';
+  v_ult bigint;
 begin
   if v_tipo = 'ack' then
     for ak in select * from jsonb_array_elements(coalesce(b->'acks', '[]'::jsonb)) loop
@@ -191,6 +193,7 @@ begin
 
     if v_id is not null then
       v_novas := v_novas + 1;
+      if coalesce(nullif(m->>'tipo', ''), 'texto') = 'texto' or nullif(m->>'transcricao', '') is not null then v_ult := v_id; end if;
       for md in select * from jsonb_array_elements(coalesce(m->'midias', '[]'::jsonb)) loop
         if coalesce(md->>'b64', '') <> '' then
           insert into suporte.midias (mensagem_id, mime, dados) values (v_id, coalesce(nullif(md->>'mime', ''), 'application/octet-stream'), md->>'b64');
@@ -210,7 +213,8 @@ begin
      where conv = v_conv;
   end if;
 
-  return jsonb_build_object('ok', true, 'novas', v_novas);
+  return jsonb_build_object('ok', true, 'novas', v_novas,
+    'ia', case when v_ult is not null and suporte.ia_elegivel(v_conv) then jsonb_build_object('conv', v_conv, 'ultimo_in', v_ult::text) end);
 end
 $fn$;
 
@@ -421,7 +425,7 @@ begin
     select coalesce(jsonb_agg(jsonb_build_object(
              'conv', c.conv, 'nome', c.nome, 'numero', c.numero, 'ultima_msg', c.ultima_msg,
              'ultima_direcao', c.ultima_direcao, 'ultima_em', c.ultima_em, 'nao_lidas', c.nao_lidas,
-             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde, 'nome_crm', c.nome_crm, 'crm', c.crm, 'silenciada', c.silenciada,
+             'status', c.status, 'tem_botao', c.tem_botao, 'aparelho', c.aparelho, 'espera_desde', c.espera_desde, 'nome_crm', c.nome_crm, 'crm', c.crm, 'silenciada', c.silenciada, 'ia_trava_ate', c.ia_trava_ate,
              'etiquetas', (select coalesce(jsonb_agg(ce.etiqueta_id::text order by e.ordem, e.nome), '[]'::jsonb)
                              from suporte.conversa_etiquetas ce join suporte.etiquetas e on e.id = ce.etiqueta_id where ce.conv = c.conv))
              order by case when coalesce(b->>'filtro', '') in ('esperando', 'clientes') then c.espera_desde end asc nulls last, c.ultima_em desc), '[]'::jsonb)
@@ -455,6 +459,7 @@ begin
                       'segundos', extract(epoch from now() - a.visto_em)::int, 'dados', a.dados)), '[]'::jsonb)
                       from suporte.aparelhos a where a.aparelho <> '_painel'),
       'nao_lidas', (select coalesce(sum(nao_lidas), 0) from suporte.conversas where status = 'aberta' and not silenciada),
+      'ia_cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_trava_dias')),
       'convs_nao_lidas', (select count(*) from suporte.conversas where nao_lidas > 0 and not silenciada),
       'esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada),
       'clientes_esperando', (select count(*) from suporte.conversas where status = 'aberta' and ultima_direcao = 'in' and not silenciada and coalesce((crm->>'pedidos')::int, 0) > 0),
@@ -534,7 +539,7 @@ begin
       ) s;
     return jsonb_build_object(
       'ok', true,
-      'conversa', jsonb_build_object('conv', v_c.conv, 'nome', v_c.nome, 'nome_crm', v_c.nome_crm, 'numero', v_c.numero, 'status', v_c.status, 'tem_botao', v_c.tem_botao, 'silenciada', v_c.silenciada,
+      'conversa', jsonb_build_object('conv', v_c.conv, 'nome', v_c.nome, 'nome_crm', v_c.nome_crm, 'numero', v_c.numero, 'status', v_c.status, 'tem_botao', v_c.tem_botao, 'silenciada', v_c.silenciada, 'ia_trava_ate', v_c.ia_trava_ate,
                                   'etiquetas', (select coalesce(jsonb_agg(ce.etiqueta_id::text), '[]'::jsonb) from suporte.conversa_etiquetas ce where ce.conv = v_c.conv)),
       'mensagens', v_r,
       'cliente', case when coalesce((b->>'crm')::boolean, true) then suporte.cliente_crm(v_c.numero) end);
@@ -564,7 +569,8 @@ begin
       end if;
       update suporte.conversas
          set ultima_msg = left(case when coalesce(b->'midia'->>'b64', '') <> '' then '📷 ' || coalesce(nullif(v_txt, ''), 'Foto') else v_txt end, 200),
-             ultima_direcao = 'out', ultima_em = now(), nao_lidas = 0
+             ultima_direcao = 'out', ultima_em = now(), nao_lidas = 0,
+             ia_trava_ate = greatest(coalesce(ia_trava_ate, now()), now() + interval '24 hours')
        where conv = v_conv;
     end if;
     return jsonb_build_object('ok', true, 'id', v_id::text);
@@ -581,6 +587,24 @@ begin
     if coalesce(b->>'id', '') !~ '^\d+$' then return jsonb_build_object('ok', false, 'erro', 'id_invalido'); end if;
     update suporte.mensagens set status = 'cancelada', atualizado_em = now()
      where id = (b->>'id')::bigint and direcao = 'out' and status in ('pendente', 'falhou', 'sem_notificacao');
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'ia_trava' then
+    update suporte.conversas
+       set ia_trava_ate = case when coalesce(b->>'dias', '') ~ '^[1-9]\d{0,2}$' then now() + ((b->>'dias')::int * interval '1 day') else null end
+     where conv = v_conv;
+    insert into suporte.ia_log (conv, acao, motivo) select v_conv, case when coalesce(b->>'dias', '0') = '0' then 'liberada' else 'travada' end, 'pela atendente'
+     where exists (select 1 from suporte.conversas where conv = v_conv);
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if v_acao = 'ia_config' then
+    insert into suporte.config (chave, valor)
+    select k, v from (values ('ia_rastreio', case when (b->>'rastreio')::boolean then 'sim' else 'nao' end),
+                             ('ia_venda', case when (b->>'venda')::boolean then 'sim' else 'nao' end),
+                             ('ia_trava_dias', case when coalesce(b->>'trava_dias', '') ~ '^[1-9]\d{0,2}$' then b->>'trava_dias' else '7' end)) x(k, v)
+    on conflict (chave) do update set valor = excluded.valor;
     return jsonb_build_object('ok', true);
   end if;
 
@@ -681,6 +705,8 @@ begin
   if r = 'out' then return suporte.r_out(coalesce(p->'body', '{}'::jsonb)); end if;
   if r = 'painel' then return suporte.r_painel(coalesce(p->'body', '{}'::jsonb)); end if;
   if r = 'limpar' then return suporte.r_limpar(); end if;
+  if r = 'ia_contexto' then return suporte.ia_contexto(coalesce(p->'body', '{}'::jsonb)); end if;
+  if r = 'ia_decisao' then return suporte.ia_decisao(coalesce(p->'body', '{}'::jsonb)); end if;
   if r = 'rastreio_salvar' then
     insert into suporte.rastreio_cache (codigo, dados, atualizado_em)
     values (p->'body'->>'codigo', coalesce(p->'body'->'dados', '{}'::jsonb), now())
@@ -688,6 +714,127 @@ begin
     return jsonb_build_object('ok', true, 'codigo', p->'body'->>'codigo', 'em', now(), 'cache', false) || coalesce(p->'body'->'dados', '{}'::jsonb);
   end if;
   return jsonb_build_object('ok', false, 'erro', 'rota_invalida');
+end
+$fn$;
+
+-- ---------------------------------------------------------------- IA do suporte: rastreio/status automático e Fernanda pra quem não comprou
+-- A IA nunca fala com quem tem problema: o fluxo manda pra atendente e trava a IA na conversa (ia_trava_dias).
+-- Quando a atendente responde pelo painel, a IA fica fora da conversa por 24h.
+
+create table if not exists suporte.ia_log (
+  id bigserial primary key,
+  conv text not null references suporte.conversas(conv) on delete cascade on update cascade,
+  acao text not null,
+  ref text,
+  motivo text,
+  mensagem_id bigint,
+  criado_em timestamptz not null default now()
+);
+create unique index if not exists ia_log_ref_uq on suporte.ia_log (acao, ref) where acao in ('rastreio', 'preparando') and ref is not null;
+create index if not exists ia_log_conv_idx on suporte.ia_log (conv, criado_em desc);
+
+insert into suporte.config (chave, valor) values ('ia_rastreio', 'sim'), ('ia_venda', 'sim'), ('ia_trava_dias', '7')
+on conflict (chave) do nothing;
+
+insert into suporte.etiquetas (nome, cor, ordem) values ('Atendimento humano', '#c92a2a', 5) on conflict (nome) do nothing;
+
+insert into suporte.respostas (atalho, texto, ordem)
+values ('auto-preparando', E'Olá, {nome}! Tudo bem? 💙\n\nSeu pedido #{pedido} já foi faturado e está sendo preparado pra envio 📦\nAssim que for postado, o código de rastreio chega aqui no WhatsApp.\n\nEquipe Face Clean 🌿', 35)
+on conflict (atalho) do nothing;
+
+create or replace function suporte.ia_elegivel(p_conv text) returns boolean
+language sql stable as $fn$
+  select exists (
+    select 1 from suporte.conversas c
+     where c.conv = p_conv
+       and not c.silenciada
+       and (c.ia_trava_ate is null or c.ia_trava_ate < now())
+       and exists (select 1 from suporte.config where chave in ('ia_rastreio', 'ia_venda') and valor = 'sim')
+       and not exists (select 1 from suporte.mensagens o
+                        where o.conv = c.conv and o.direcao = 'out' and o.status <> 'cancelada'
+                          and coalesce(o.autor, '') not like '%🤖%' and o.criado_em > now() - interval '24 hours'))
+$fn$;
+
+create or replace function suporte.ia_contexto(b jsonb) returns jsonb
+language plpgsql as $fn$
+declare
+  v_conv text := coalesce(b->>'conv', '');
+  v_ult bigint := case when coalesce(b->>'ultimo_in', '') ~ '^\d+$' then (b->>'ultimo_in')::bigint end;
+  v_c record;
+begin
+  select * into v_c from suporte.conversas where conv = v_conv;
+  if not found or v_ult is null then return jsonb_build_object('ok', true, 'ctx', null, 'motivo', 'sem_conversa'); end if;
+  if not suporte.ia_elegivel(v_conv) then return jsonb_build_object('ok', true, 'ctx', null, 'motivo', 'nao_elegivel'); end if;
+  if exists (select 1 from suporte.mensagens where conv = v_conv and direcao = 'in' and id > v_ult) then
+    return jsonb_build_object('ok', true, 'ctx', null, 'motivo', 'chegou_outra_mensagem');
+  end if;
+  if exists (select 1 from suporte.mensagens where conv = v_conv and direcao = 'out' and status <> 'cancelada'
+              and criado_em > (select criado_em from suporte.mensagens where id = v_ult)) then
+    return jsonb_build_object('ok', true, 'ctx', null, 'motivo', 'ja_respondida');
+  end if;
+  return jsonb_build_object('ok', true, 'ctx', jsonb_build_object(
+    'conv', v_c.conv, 'numero', v_c.numero, 'nome', coalesce(v_c.nome_crm, v_c.nome), 'ultimo_in', v_ult::text,
+    'crm', suporte.crm_resumo(v_c.numero),
+    'cliente', suporte.cliente_crm(v_c.numero),
+    'msgs', (select coalesce(jsonb_agg(x order by (x->>'id')::bigint), '[]'::jsonb) from (
+               select jsonb_build_object('id', m.id, 'd', m.direcao, 'autor', m.autor, 'em', m.criado_em,
+                        't', left(case when m.tipo = 'audio' then '[áudio] ' || coalesce(m.transcricao, '')
+                                       when m.tipo = 'imagem' then '[foto] ' || coalesce(m.legenda, '')
+                                       else m.texto end, 600)) x
+                 from suporte.mensagens m where m.conv = v_conv and m.status <> 'cancelada'
+                order by m.id desc limit 14) s),
+    'refs', (select coalesce(jsonb_agg(acao || ':' || ref), '[]'::jsonb) from suporte.ia_log where conv = v_conv and ref is not null),
+    'vendas_24h', (select count(*) from suporte.ia_log where conv = v_conv and acao = 'venda' and criado_em > now() - interval '24 hours'),
+    'cfg', (select jsonb_object_agg(chave, valor) from suporte.config where chave in ('ia_rastreio', 'ia_venda', 'ia_trava_dias')),
+    'modelos', (select jsonb_object_agg(atalho, texto) from suporte.respostas where atalho in ('rastreio', 'auto-preparando'))));
+end
+$fn$;
+
+create or replace function suporte.ia_decisao(b jsonb) returns jsonb
+language plpgsql as $fn$
+declare
+  v_conv text := coalesce(b->>'conv', '');
+  v_ult bigint := case when coalesce(b->>'ultimo_in', '') ~ '^\d+$' then (b->>'ultimo_in')::bigint end;
+  v_acao text := coalesce(b->>'acao', '');
+  v_txt text := left(trim(coalesce(b->>'texto', '')), 4000);
+  v_ref text := nullif(b->>'ref', '');
+  v_motivo text := left(coalesce(b->>'motivo', ''), 300);
+  v_log bigint;
+  v_id bigint;
+  v_dias int;
+begin
+  if not exists (select 1 from suporte.conversas where conv = v_conv) or v_ult is null then
+    return jsonb_build_object('ok', false, 'erro', 'sem_conversa');
+  end if;
+  if v_acao in ('rastreio', 'preparando', 'venda') then
+    if v_txt = '' then return jsonb_build_object('ok', false, 'erro', 'texto_vazio'); end if;
+    if not suporte.ia_elegivel(v_conv)
+       or exists (select 1 from suporte.mensagens where conv = v_conv and direcao = 'in' and id > v_ult)
+       or exists (select 1 from suporte.mensagens where conv = v_conv and direcao = 'out' and status <> 'cancelada'
+                   and criado_em > (select criado_em from suporte.mensagens where id = v_ult)) then
+      return jsonb_build_object('ok', true, 'enviado', false, 'motivo', 'mudou_enquanto_pensava');
+    end if;
+    insert into suporte.ia_log (conv, acao, ref, motivo) values (v_conv, v_acao, v_ref, v_motivo)
+    on conflict do nothing returning id into v_log;
+    if v_log is null then return jsonb_build_object('ok', true, 'enviado', false, 'motivo', 'ja_mandado_antes'); end if;
+    insert into suporte.mensagens (conv, direcao, tipo, texto, status, autor)
+    values (v_conv, 'out', 'texto', v_txt, 'pendente', case when v_acao = 'venda' then 'Fernanda 🤖' else 'Automático 🤖' end)
+    returning id into v_id;
+    update suporte.ia_log set mensagem_id = v_id where id = v_log;
+    update suporte.conversas set ultima_msg = left(v_txt, 200), ultima_direcao = 'out', ultima_em = now(), nao_lidas = 0 where conv = v_conv;
+    return jsonb_build_object('ok', true, 'enviado', true, 'id', v_id::text);
+  end if;
+  if v_acao = 'humano' then
+    v_dias := coalesce((select valor::int from suporte.config where chave = 'ia_trava_dias' and valor ~ '^\d{1,3}$'), 7);
+    update suporte.conversas set ia_trava_ate = now() + v_dias * interval '1 day' where conv = v_conv;
+    insert into suporte.conversa_etiquetas (conv, etiqueta_id)
+    select v_conv, e.id from suporte.etiquetas e where e.nome = 'Atendimento humano'
+    on conflict do nothing;
+    insert into suporte.ia_log (conv, acao, motivo) values (v_conv, 'humano', v_motivo);
+    return jsonb_build_object('ok', true, 'travada_dias', v_dias);
+  end if;
+  insert into suporte.ia_log (conv, acao, motivo) values (v_conv, 'nada', v_motivo);
+  return jsonb_build_object('ok', true);
 end
 $fn$;
 

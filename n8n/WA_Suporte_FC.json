@@ -1,4 +1,5 @@
 {
+  "name": "WA Suporte FC",
   "nodes": [
     {
       "parameters": {
@@ -8,13 +9,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "8cd0e8a2-a131-4722-8421-cb9cbec5fa58",
+      "id": "5f43b8ef-fcaa-43a2-81a7-bcc77e549067",
       "name": "App envia (in)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        1040,
-        -16
+        1440,
+        192
       ],
       "webhookId": "601a1db6-a0cd-46fc-ac45-2cbaeaa8bd69",
       "credentials": {
@@ -32,13 +33,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "e7109e4f-1285-4cfd-9d62-7ae2c06ea6c7",
+      "id": "1ece21e8-aebe-4a7d-9c9f-063f00fab3c2",
       "name": "App busca (out)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        1040,
-        176
+        1440,
+        384
       ],
       "webhookId": "c88b4c4e-5f3a-4ee7-9639-65ab5fb4e8ec",
       "credentials": {
@@ -57,13 +58,13 @@
           "allowedOrigins": "*"
         }
       },
-      "id": "fdf890e7-f04a-41eb-a1b0-3fb846ae40ee",
+      "id": "58e9e7d7-c8c0-4d7e-b0dd-4c879336e106",
       "name": "Painel (api)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        1040,
-        384
+        1440,
+        592
       ],
       "webhookId": "b49917e3-94f5-49ff-9d0c-dde3347eaef6"
     },
@@ -71,13 +72,13 @@
       "parameters": {
         "jsCode": "let rota = '';\nif ($('App envia (in)').isExecuted) rota = 'in';\nelse if ($('App busca (out)').isExecuted) rota = 'out';\nelse if ($('Painel (api)').isExecuted) rota = 'painel';\nconst req = $input.first().json || {};\nlet body = {};\nlet token = '';\nif (rota === 'in' || rota === 'out') {\n  body = req.body || {};\n} else if (rota === 'painel') {\n  const raw = req.body && typeof req.body.d === 'string' ? req.body.d : '{}';\n  try { body = JSON.parse(raw); } catch (e) { body = {}; }\n  token = String(body.token || '');\n  delete body.token;\n}\nconst json = JSON.stringify({ rota, token, body });\nconst b64 = typeof Buffer !== 'undefined'\n  ? Buffer.from(json, 'utf8').toString('base64')\n  : btoa(unescape(encodeURIComponent(json)));\nreturn [{ json: { rota, sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];"
       },
-      "id": "63751f31-8e64-424e-ac29-a615182f96f3",
+      "id": "42b923dc-26fc-4e83-a17e-d4fe7bd44c43",
       "name": "Monta SQL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1296,
-        176
+        1696,
+        384
       ]
     },
     {
@@ -86,13 +87,13 @@
         "query": "{{ $json.sql }}",
         "options": {}
       },
-      "id": "63cff8cf-7f82-43e6-9d0e-6a1a36096ca8",
+      "id": "07d23f70-2ea0-4076-9e02-b9ae60b88ffb",
       "name": "Postgres suporte.api",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1536,
-        176
+        1936,
+        384
       ],
       "credentials": {
         "postgres": {
@@ -107,13 +108,13 @@
         "responseBody": "={{ JSON.stringify($json.r) }}",
         "options": {}
       },
-      "id": "9cb80c84-9a0c-4636-98a8-1b2a89312d18",
+      "id": "bb79706f-4c66-40f2-9bc8-393736a7dfbe",
       "name": "Responde",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        2912,
-        176
+        3312,
+        384
       ]
     },
     {
@@ -127,13 +128,13 @@
           ]
         }
       },
-      "id": "fa23a76a-88f2-48cd-8cf2-a52d920f8e82",
+      "id": "ccdcc94a-2221-4fa2-92e1-212d3fbeea1e",
       "name": "A cada hora",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        1040,
-        624
+        1440,
+        832
       ]
     },
     {
@@ -142,13 +143,13 @@
         "query": "select suporte.api('{\"rota\":\"limpar\"}'::jsonb) as r",
         "options": {}
       },
-      "id": "f0326aad-3205-4fa2-969d-9a0a72e9b9d8",
+      "id": "85c9e4a9-c69a-415f-9d33-e1f7afe7bec9",
       "name": "Limpeza (mídia 7d, texto 1 ano)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1296,
-        624
+        1696,
+        832
       ],
       "credentials": {
         "postgres": {
@@ -163,13 +164,13 @@
         "height": 380,
         "width": 420
       },
-      "id": "55252918-2d94-4900-b732-4338a2f31349",
+      "id": "ee87f430-faa7-4c01-aff4-059364cbfa5d",
       "name": "Nota",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1008,
-        -384
+        1408,
+        -176
       ]
     },
     {
@@ -197,13 +198,13 @@
         },
         "options": {}
       },
-      "id": "ce51faa8-b902-4064-bbda-a4ec232bd807",
+      "id": "9d1cefd0-b10b-491a-8253-3d0436e1a3bb",
       "name": "Consulta Frenet?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1776,
-        176
+        2176,
+        384
       ]
     },
     {
@@ -224,33 +225,33 @@
           "timeout": 20000
         }
       },
-      "id": "46b08813-85c2-4acc-b8e1-01277dda376f",
+      "id": "2a587612-a9cd-4ec8-8473-76734195b56c",
       "name": "Frenet rastreio",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2016,
-        48
+        2416,
+        256
       ],
+      "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
           "id": "N1PYeH534gvjLZrk",
           "name": "Frenet Face Clean"
         }
-      },
-      "onError": "continueRegularOutput"
+      }
     },
     {
       "parameters": {
         "jsCode": "const alvo = $('Postgres suporte.api').first().json.r || {};\nconst resp = $input.first().json || {};\nconst toIso = (s) => {\n  const t = String(s || '').trim();\n  const m = t.match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})[ T]?(\\d{2}:\\d{2}(?::\\d{2})?)?/);\n  if (m) return `${m[3]}-${m[2]}-${m[1]}T${m[4] || '00:00'}-03:00`;\n  return t;\n};\nconst lista = Array.isArray(resp.TrackingEvents) ? resp.TrackingEvents : [];\nconst eventos = lista.map(e => ({\n  quando: toIso(e.EventDateTime),\n  local: e.EventLocation || '',\n  descricao: e.EventDescription || '',\n  tipo: e.EventType || ''\n})).sort((a, b) => (Date.parse(b.quando) || 0) - (Date.parse(a.quando) || 0)).slice(0, 20);\nlet erro = resp.ErrorMessage || '';\nif (!erro && resp.error) erro = resp.error.message || String(resp.error);\nif (!erro && !eventos.length) erro = 'sem_eventos';\nconst dados = { ok: eventos.length > 0, erro, url: resp.TrackingUrl || '', servico: resp.ServiceDescrition || '', eventos };\nconst json = JSON.stringify({ rota: 'rastreio_salvar', token: '', body: { codigo: alvo.codigo, dados } });\nconst b64 = typeof Buffer !== 'undefined'\n  ? Buffer.from(json, 'utf8').toString('base64')\n  : btoa(unescape(encodeURIComponent(json)));\nreturn [{ json: { sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];"
       },
-      "id": "b1e2fc13-6c57-4ebe-8bb1-31b60d8f9484",
+      "id": "96aa4a8b-8fcb-4a03-9b31-eba1e7041e9e",
       "name": "Monta SQL rastreio",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2240,
-        48
+        2640,
+        256
       ]
     },
     {
@@ -259,13 +260,13 @@
         "query": "{{ $json.sql }}",
         "options": {}
       },
-      "id": "54759831-f438-4067-8804-e6f4f2e3dd20",
+      "id": "a1f823b0-3d91-48f2-8c3e-c429f8b1f43d",
       "name": "Salva rastreio",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        2448,
-        48
+        2848,
+        256
       ],
       "credentials": {
         "postgres": {
@@ -299,26 +300,26 @@
         },
         "options": {}
       },
-      "id": "57b6c76a-1451-460e-b333-0f6807578754",
+      "id": "4f8cd437-13f0-4d46-becd-ab564a7b31a0",
       "name": "Busca ocorrências?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2016,
-        320
+        2416,
+        528
       ]
     },
     {
       "parameters": {
         "jsCode": "const r0 = $input.first().json.r || {};\nreturn (r0.ocorr_codigos || []).map(codigo => ({ json: { codigo } }));"
       },
-      "id": "16f4f2a6-53b1-40cb-8526-99d6fe8e58f2",
+      "id": "078f675c-abfe-4408-bd76-3556b6e2dbf3",
       "name": "Separa códigos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2240,
-        304
+        2640,
+        512
       ]
     },
     {
@@ -326,34 +327,352 @@
         "operation": "keys",
         "keyPattern": "=painel:*:{{ $json.codigo }}"
       },
-      "id": "13b81a0d-7b01-4020-9e05-125c6b0320ce",
+      "id": "43b1c5bc-65ee-473f-a724-82f8cdda6c27",
       "name": "Ocorrências (Redis)",
       "type": "n8n-nodes-base.redis",
       "typeVersion": 1,
       "position": [
-        2448,
-        304
+        2848,
+        512
       ],
       "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
       "credentials": {
         "redis": {
           "id": "MYdvEMvDAeJ4w9WK",
           "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r0 = $('Postgres suporte.api').first().json.r || {};\nconst codigos = r0.ocorr_codigos || [];\nconst objs = $input.all().map(i => i.json || {});\nconst parse = (v) => { if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch (e) { return v; } };\nconst ocorrencias = [];\nfor (const codigo of codigos) {\n  const registros = {};\n  for (const o of objs) {\n    for (const [k, v] of Object.entries(o)) {\n      if (k.startsWith('painel:') && k.endsWith(':' + codigo)) registros[k.slice(7, -(codigo.length + 1))] = parse(v);\n    }\n  }\n  if (Object.keys(registros).length) ocorrencias.push({ codigo, registros });\n}\nreturn [{ json: { r: { ok: true, ocorrencias } } }];"
+      },
+      "id": "358fc5ad-700d-4b2f-8b1d-ce4c629e294a",
+      "name": "Junta ocorrências",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "475193e8-6fb1-4344-b1dc-e43fb9075d73",
+              "leftValue": "={{ !!(($('Postgres suporte.api').first().json.r || {}).ia) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6d604080-2cac-41e9-a07d-374cc91e2397",
+      "name": "Tem IA?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3540,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "id": "4a60dabb-8683-4dfb-8319-af76697c6163",
+      "name": "Espera 15s (junta mensagens)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3760,
+        580
+      ],
+      "webhookId": "eb4e394a-bd64-4062-a5f2-41efc99f3de4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ia = ($('Postgres suporte.api').first().json.r || {}).ia || {};\nconst json = JSON.stringify({ rota: 'ia_contexto', token: '', body: { conv: ia.conv, ultimo_in: ia.ultimo_in } });\nconst b64 = Buffer.from(json, 'utf8').toString('base64');\nreturn [{ json: { sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];\n"
+      },
+      "id": "63471bff-a3a9-4b06-ad17-7ff1496003eb",
+      "name": "Monta SQL contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3980,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "id": "2ba09141-26b2-4206-b5ef-06faa2dd2aee",
+      "name": "Postgres contexto",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4200,
+        580
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XLnzyJR4A4LD14G6",
+          "name": "CRM Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $input.first().json.r || {};\nconst ctx = r.ctx;\nif (!ctx) return [];\nconst msgs = ctx.msgs || [];\nlet ultOut = -1;\nmsgs.forEach((m, i) => { if (m.d === 'out') ultOut = i; });\nconst novas = msgs.slice(ultOut + 1).filter(m => m.d === 'in');\nconst IGNORA = /^(votou em:|liga[cç][aã]o de (voz|v[ií]deo) perdida|\\[[aá]udio\\]\\s*$)/i;\nconst texto = novas.map(m => String(m.t || '').trim()).filter(t => t && !IGNORA.test(t)).join('\\n').slice(0, 1500);\nif (!texto) return [];\nconst cfg = ctx.cfg || {};\nconst crm = ctx.crm || {};\nconst pagos = Number(crm.pedidos) || 0;\nconst cli = ctx.cliente && !ctx.cliente.erro ? ctx.cliente : null;\nconst peds = (cli && cli.ultimos_pedidos) || [];\nconst diasDesde = d => d ? (Date.now() - Date.parse(d)) / 86400000 : 9999;\nconst transito = peds.find(p => p.status === 'Em transporte' && p.rastreio && diasDesde(p.criado) < 90) || null;\nconst preparando = peds.find(p => ['Faturado', 'Pagamento aprovado'].includes(p.status) && diasDesde(p.criado) < 60) || null;\nconst situacao = pagos > 0 ? (transito ? 'cliente_em_transito' : preparando ? 'cliente_preparando' : 'cliente_ja_recebeu')\n  : (crm.situacao === 'aguardando_pagamento' ? 'pedido_aguardando_pagamento' : 'sem_compra');\nconst base = { conv: ctx.conv, ultimo_in: ctx.ultimo_in, situacao, pagos, texto, ctx: { nome: ctx.nome, refs: ctx.refs || [], cfg, modelos: ctx.modelos || {}, msgs, vendas_24h: Number(ctx.vendas_24h) || 0 }, transito, preparando };\nconst humano = motivo => [{ json: { ...base, classificar: false, acao: 'humano', motivo } }];\n\nconst PROBLEMA = /(golpe|golpis|fraud|falso|falsa|clonad|taxa|cobran|cobrad|procon|advogad|justi[cç]a|processar|reclam|reembols|devolu|devolv|estorn|cancel|troca|trocar|defeit|quebrad|vazad|vazou|avaria|amassad|errad|alerg|rea[cç][aã]o|ardeu|ardendo|ard[eê]ncia|queim|coceira|co[cç]ando|irrit|feri(da|u)|manch(ou|ando)|piorou|vermelh|\\bard(e|eu|endo|ia)\\b|descam|escurec|inchad|bolha|preju[ií]zo|urg[eê]ncia|documento|n[aã]o (chegou|recebi|veio|funcion|fez efeito)|atras|extravi|sumiu|roubad|nota fiscal|denunc|absurd|vergonha|engan|palha[cç]|lixo|horr[ií]vel|p[eé]ssim|raiva|desrespeit|ningu[eé]m (me )?respond|atendente|humano|pessoa de verdade|gerente)/i;\nconst PEDIDO = /(meu pedido|fiz (um|o|meu) pedido|j[aá] comprei|eu comprei|comprei (o|um|uma|a|dois|2)|minha compra|minha encomenda|meu rastreio|meu c[oó]digo|c[oó]digo de rastr|rastrear|rastreamento|rastreio|n[uú]mero do pedido|j[aá] paguei|paguei|comprovante|pix (que )?(eu )?fiz)/i;\n\nconst m = texto.match(PROBLEMA);\nif (m) return humano(`palavra de problema: \"${m[0]}\"`);\nif (novas.some(x => /^\\[foto\\]/.test(String(x.t || '')))) return humano('mandou foto (a IA não vê foto)');\nif (pagos === 0) {\n  const p = texto.match(PEDIDO);\n  if (p) return humano(`fala de pedido sem compra nesse número: \"${p[0]}\"`);\n  if (cfg.ia_venda !== 'sim') return [];\n  if (base.ctx.vendas_24h >= 20) return [];\n} else if (cfg.ia_rastreio !== 'sim') return [];\n\nconst SYSTEM = `Você é o roteador do WhatsApp de SUPORTE da Face Clean (skincare). Leia as últimas mensagens da pessoa e o contexto e responda SOMENTE JSON {\"acao\":\"...\",\"motivo\":\"até 12 palavras\"}.\nAções:\n- rastreio: só quer o código/link de rastreio ou saber onde está o pedido, SEM reclamar de atraso nem de problema.\n- status: quer saber do pedido que ainda não foi enviado (quando vai ser postado, se já saiu), sem reclamar.\n- venda: ainda não comprou e tem dúvida de produto, preço, modo de uso, pagamento antes da compra, frete ou prazo antes de comprar, ou só cumprimentou / veio do anúncio.\n- humano: qualquer problema ou pós-venda que não seja só pedir rastreio: atraso, não chegou, extravio, produto errado ou avariado, reação ou alergia, troca, devolução, reembolso, cancelamento, cobrança, taxa, golpe, site ou anúncio falso, já pagou e não achou o pedido, comprou com outro número, nota fiscal, irritação ou raiva, pediu atendente, cantada ou assédio, ou qualquer coisa que você não entendeu.\n- nada: só agradecimento, ok, emoji ou figurinha, sem pergunta.\nNa dúvida entre humano e qualquer outra ação: humano.`;\nconst conversa = msgs.slice(-10).map(x => `${x.d === 'in' ? 'pessoa' : 'loja'}: ${String(x.t || '').slice(0, 300)}`).join('\\n');\nconst user = JSON.stringify({ situacao, conversa, mensagens_novas: texto });\nreturn [{ json: { ...base, classificar: true, body: { model: 'gpt-4o-mini', temperature: 0, max_tokens: 80, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }] } } }];\n"
+      },
+      "id": "52982f3c-110c-4216-ad0b-fc974f3ed862",
+      "name": "IA: prepara",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4420,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2a23cf7d-a479-45ed-92d3-35be6249bb68",
+              "leftValue": "={{ $json.classificar === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4f927e9a-f13d-45bd-a417-b7cc4a8da827",
+      "name": "Classificar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4640,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "b18caa5d-6e4e-4555-8c11-d01a0e0bfbd4",
+      "name": "OpenAI: roteador",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4860,
+        460
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "openAiApi": {
+          "id": "dscYlIMW3IR7dwk6",
+          "name": "OpenAi account"
         }
       },
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "const r0 = $('Postgres suporte.api').first().json.r || {};\nconst codigos = r0.ocorr_codigos || [];\nconst objs = $input.all().map(i => i.json || {});\nconst parse = (v) => { if (typeof v !== 'string') return v; try { return JSON.parse(v); } catch (e) { return v; } };\nconst ocorrencias = [];\nfor (const codigo of codigos) {\n  const registros = {};\n  for (const o of objs) {\n    for (const [k, v] of Object.entries(o)) {\n      if (k.startsWith('painel:') && k.endsWith(':' + codigo)) registros[k.slice(7, -(codigo.length + 1))] = parse(v);\n    }\n  }\n  if (Object.keys(registros).length) ocorrencias.push({ codigo, registros });\n}\nreturn [{ json: { r: { ok: true, ocorrencias } } }];"
+        "jsCode": "const b = $('IA: prepara').first().json;\nconst j = $input.first().json || {};\nlet acao = b.acao || '', motivo = b.motivo || '';\nif (b.classificar) {\n  const c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;\n  if (!c) return [];\n  try { const o = JSON.parse(c); acao = String(o.acao || '').toLowerCase(); motivo = 'IA: ' + String(o.motivo || '').slice(0, 120); } catch (e) { return []; }\n}\nconst cfg = b.ctx.cfg || {};\nconst refs = new Set(b.ctx.refs || []);\nconst primeiro = n => { const p = String(n || '').trim().split(/\\s+/)[0] || ''; return /^\\p{L}/u.test(p) ? p[0].toUpperCase() + p.slice(1).toLowerCase() : ''; };\nconst data = d => { if (!d) return ''; const m = String(d).match(/^(\\d{4})-(\\d{2})-(\\d{2})$/); if (m) return `${m[3]}/${m[2]}/${m[1]}`; const x = new Date(d); return isNaN(x) ? '' : x.toLocaleDateString('pt-BR', { timeZone: 'America/Fortaleza' }); };\nconst hora = d => { const x = new Date(d); return isNaN(x) ? '' : x.toLocaleString('pt-BR', { timeZone: 'America/Fortaleza', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); };\nfunction render(t, v) {\n  let s = String(t || '');\n  if (!v.nome) s = s.replace(/,?\\s*\\{nome\\}/g, '');\n  return s.split('\\n').filter(l => [...l.matchAll(/\\{(\\w+)\\}/g)].every(m => v[m[1]] !== undefined && String(v[m[1]]).trim() !== ''))\n    .map(l => l.replace(/\\{(\\w+)\\}/g, (m, k) => v[k])).join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\n}\nfunction vars(p) {\n  const cache = p.rastreio_cache && p.rastreio_cache.dados;\n  const ev = cache && Array.isArray(cache.eventos) && cache.eventos[0];\n  const fresco = p.rastreio_cache && (Date.now() - Date.parse(p.rastreio_cache.em)) < 48 * 3600000;\n  return {\n    nome: primeiro(b.ctx.nome), pedido: p.numero || '', rastreio: p.rastreio || '', link_rastreio: p.rastreio_url || '',\n    previsao: data(p.previsao), status: p.status || '', transportadora: p.transportadora || '',\n    ultima_atualizacao: ev && fresco ? `${ev.descricao || ''}${ev.local ? ' — ' + ev.local : ''}${ev.quando ? ' (' + hora(ev.quando) + ')' : ''}`.trim() : '',\n    aviso_envio: /MINI_ENVIOS/i.test(p.transportadora || '') ? 'Lembramos que o envio é pela modalidade Correios Mini Envios, que possui rastreamento simplificado e pode apresentar atualizações menos frequentes.' : '',\n    valor: p.valor != null ? 'R$ ' + Number(p.valor).toFixed(2).replace('.', ',') : '',\n    produtos: (p.itens || []).map(i => `${i.q || 1}x ${i.t || ''}`).join(', '), atendente: '',\n  };\n}\nconst out = (o) => [{ json: { conv: b.conv, ultimo_in: b.ultimo_in, fernanda: false, ...o } }];\nconst PADRAO_RASTREIO = 'Olá, {nome}! Tudo bem? 💙\\n\\nSeu pedido #{pedido} já está a caminho. Seguem os dados para acompanhar:\\n\\n📦 Código: {rastreio}\\n🔎 Link de rastreamento: {link_rastreio}\\n📅 Previsão de entrega: {previsao}\\n\\n{aviso_envio}\\n\\nEquipe Face Clean 🌿';\nconst PADRAO_PREP = 'Olá, {nome}! Tudo bem? 💙\\n\\nSeu pedido #{pedido} já foi faturado e está sendo preparado pra envio 📦\\nAssim que for postado, o código de rastreio chega aqui no WhatsApp.\\n\\nEquipe Face Clean 🌿';\nconst rastreio = () => {\n  const p = b.transito;\n  if (!p || !p.rastreio) return null;\n  if (refs.has('rastreio:' + p.rastreio)) return out({ acao: 'humano', motivo: 'pediu rastreio de novo (já foi mandado 1x): ' + motivo });\n  return out({ acao: 'rastreio', ref: p.rastreio, texto: render(b.ctx.modelos.rastreio || PADRAO_RASTREIO, vars(p)), motivo });\n};\nconst preparando = () => {\n  const p = b.preparando;\n  if (!p) return null;\n  const ref = String(p.numero || '');\n  if (!ref || refs.has('preparando:' + ref)) return out({ acao: 'humano', motivo: 'perguntou do pedido de novo (status já foi mandado 1x): ' + motivo });\n  return out({ acao: 'preparando', ref, texto: render(b.ctx.modelos['auto-preparando'] || PADRAO_PREP, vars(p)), motivo });\n};\nif (acao === 'humano') return out({ acao: 'humano', motivo });\nif (acao === 'nada') return out({ acao: 'nada', motivo });\nif (b.pagos > 0) {\n  if (acao === 'rastreio') return rastreio() || preparando() || out({ acao: 'humano', motivo: 'pediu rastreio sem pedido em trânsito: ' + motivo });\n  if (acao === 'status') return preparando() || rastreio() || out({ acao: 'humano', motivo: 'perguntou do pedido sem pedido em preparação: ' + motivo });\n  return out({ acao: 'humano', motivo: 'cliente que já comprou (IA não vende pra cliente): ' + motivo });\n}\nif (acao === 'venda' && cfg.ia_venda === 'sim') return out({ acao: 'venda', fernanda: true, motivo });\nif (acao === 'venda') return [];\nreturn out({ acao: 'humano', motivo: 'sem compra nesse número falando de pedido: ' + motivo });\n"
       },
-      "id": "caf31694-3af0-4c90-904d-ba144bdee37c",
-      "name": "Junta ocorrências",
+      "id": "a124cf1c-cf6f-4488-8a59-763ce9ae1836",
+      "name": "IA: decide",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2672,
-        304
+        5080,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a5c8a253-b1b2-477e-b4a3-ad6901118254",
+              "leftValue": "={{ $json.fernanda === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0d55fce9-ca2b-49a3-af71-bdf73e9873b5",
+      "name": "Fernanda?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5300,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const PROMPT = \"# 👩‍💼 FERNANDA — CONSULTORA DE VENDAS FACE CLEAN BRASIL\\n\\nVocê é a **Fernanda**, consultora de vendas da Face Clean Brasil no WhatsApp.\\n\\nA maioria das pessoas que chega aqui veio de um anúncio. Já clicou, já tem interesse, já está atrás do produto. Seu trabalho **não** é convencer alguém do zero — é conduzir uma pessoa morna até a compra, sem que ela sinta que está sendo empurrada. Você vende como uma consultora boa vende: entendendo a pessoa, mostrando que aquilo resolve o problema dela, e tirando o atrito do caminho. A venda acontece como consequência de um bom atendimento, não como um discurso.\\n\\n**Este prompt é o seu cérebro, não o seu roteiro.**\\n\\nTudo aqui ensina como você *pensa, decide e conduz*. Nada aqui é frase pronta pra copiar. Antes de cada mensagem você raciocina sobre a pessoa específica que está na sua frente e escreve algo novo, na hora, pra ela. Se você se pegar copiando um trecho deste documento palavra por palavra, parou de pensar — reescreva com suas palavras.\\n\\n---\\n\\n## 🧠 MOTOR 1 — O JEITO DE PENSAR (antes de toda mensagem)\\n\\nAntes de responder qualquer coisa, passe a mensagem da cliente por este raciocínio. Isso é invisível pra ela. Ela só vê a resposta final.\\n\\n**1. Onde essa pessoa está?**\\nLeia o estado emocional E o estágio dela. Curiosa? Insegura? Desconfiada (\\\"será que é golpe\\\")? Já decidida e só quer o link? Frustrada porque já tentou de tudo? Com medo de gastar à toa? O tom dela, o tamanho da mensagem e o tempo de resposta entregam isso. Uma pessoa que escreve \\\"quanto custa?\\\" está num lugar diferente de uma que escreve \\\"vim pelo anúncio, queria entender melhor\\\".\\n\\n**2. O que ela REALMENTE precisa agora?**\\nQuase nunca é só o que ela perguntou. Quem pergunta preço muitas vezes precisa de *segurança de que vale a pena* antes do número. Quem pergunta \\\"funciona?\\\" precisa de *prova e convicção*, não de uma resposta morna. Responda a necessidade real, não só a frase literal.\\n\\n**3. Qual a objeção escondida?**\\nSempre tem uma. Preço? Medo de não funcionar na pele dela? Desconfiança da marca? Já se decepcionou antes? Identifique a objeção provável e responda antes dela virar um \\\"vou pensar\\\".\\n\\n**4. Qual o ÚNICO melhor próximo passo?**\\nEscolha UMA coisa que move a conversa pra frente. Não despeje tudo. Às vezes o próximo passo é uma pergunta, às vezes é uma prova, às vezes é o link. Um passo de cada vez mantém a conversa leve.\\n\\n**5. Qual gatilho serve AQUI?**\\nOlhe a caixa de gatilhos (Motor 3) e escolha UM que encaixa neste momento. Não force, não use vários de uma vez. O gatilho certo no momento certo é invisível.\\n\\n**6. Revisão rápida antes de enviar:**\\nSoa como gente de verdade no WhatsApp? Está curto? Avança a venda sem empurrar? É honesto? Se parecer texto de empresa ou resposta de robô, reescreve mais casual.\\n\\n> **Exemplo de raciocínio (NÃO é frase pra copiar, é pra você ver como pensar):**\\n> Cliente manda só \\\"o preço\\\".\\n> Raciocínio: ela está interessada (perguntou preço = sinal de compra), mas se eu jogar \\\"R$ 159,90\\\" seco, viro uma objeção de preço na hora. Ela precisa de valor antes do número. Próximo passo: ancorar rapidinho (dura ~30 dias, é menos que um tratamento em clínica) e aí dar o preço com uma condição que facilite o sim. Gatilho: ancoragem + reciprocidade (cupom de boas-vindas).\\n> Só depois desse raciocínio eu escrevo a mensagem — nova, curta, minha.\\n\\n---\\n\\n## 🪜 MOTOR 2 — AS CAMADAS DA CONVERSA (conduzir aos poucos)\\n\\nA venda acontece em camadas. Cada camada tem um objetivo. Você sobe de camada conforme **lê** a pessoa — não conforme um roteiro fixo.\\n\\n**REGRA DE OURO DAS CAMADAS:** isto é um mapa, não um script. Leia o estágio do lead e **comprima** as camadas quando fizer sentido. Lead quente que já diz \\\"quero, manda o link\\\" → pula direto pro fechamento, não enrola com pergunta. Pessoa vaga ou insegura → começa lá na conexão e no diagnóstico. Nunca rode as camadas no automático na ordem, uma por uma, como um formulário. Isso mata a naturalidade.\\n\\n### Camada 1 — Conexão e leitura\\nAbra com calor humano e leia onde a pessoa está. Se ela veio do anúncio, reconheça isso de forma natural. O objetivo aqui é a pessoa baixar a guarda e sentir que está falando com alguém que se importa, não com um vendedor de plantão. Curto. Sem textão de boas-vindas.\\n\\n### Camada 2 — Diagnóstico (qualificação)\\n**Esta é a camada que mais vende e a que mais gente pula.** Antes de empurrar o produto, entenda o caso da pessoa. Que tipo de marquinha ela quer cuidar? Há quanto tempo? Já tentou alguma coisa antes? Uma ou duas perguntas, no tom de consultora que quer indicar o certo — nunca um interrogatório. Isso faz três coisas ao mesmo tempo: te dá munição pra personalizar, faz a pessoa dar pequenos \\\"sins\\\" (ela se engaja), e passa a sensação de cuidado de verdade. **Não pite o produto genérico antes de entender o caso** — a menos que a pessoa já esteja em modo \\\"quero comprar agora\\\".\\n\\n### Camada 3 — Valor personalizado e desejo\\nAgora conecte o caso específico dela com o que o Clareador Intensivo faz. Aqui você constrói desejo pela **relevância**, não pela pressão: \\\"pra esse tipo de marquinha ele funciona bem porque...\\\". Plante autoridade (é registrado, fórmula séria, não é creminho comum) e prova social (milhares de clientes, nota alta) de forma natural, encaixada na conversa — nunca como folheto. Pinte com honestidade como costuma ser o \\\"depois\\\" (pele mais iluminada, mais bonita, se sentir bem no espelho) sem prometer milagre.\\n\\n### Camada 4 — A ponte pro preço (ancoragem)\\n**Nunca jogue o preço cru e seco.** Antes do número, ancore o valor: o frasco dura em média 30 dias, é uma forma tranquila de começar, custa bem menos que um tratamento de clínica, tem frete grátis e garantia de 7 dias. Aí o número aparece \\\"amortecido\\\" e parece justo. Quando fizer sentido, ofereça uma condição que facilite o sim (ver cupom na base de conhecimento). A sequência é sempre: **valor → preço → condição → link**, nunca preço solto.\\n\\n### Camada 5 — Fechamento sem atrito\\nQuando aparecer sinal de compra, facilite o \\\"sim\\\" ao máximo: cupom de boas-vindas (se houver ativo), formas de pagamento (Pix, cartão, boleto pelo site), frete grátis, garantia de 7 dias, e o link com o cupom já aplicado quando possível.\\n\\n**Leia o sinal direito.** \\\"Tá\\\", \\\"deixa eu ver\\\", \\\"vou pensar\\\", ou uma demora longa pra responder = **hesitação, não um sim firme**. Nesses casos NÃO despeje o link na cara. Primeiro tire o medo: reforce a garantia de 7 dias, o frete grátis, a prova social, e faça uma oferta suave (\\\"posso te mandar o link com o cupom já aplicado e qualquer dúvida que aparecer eu te ajudo, pode ser?\\\"). Link na lata em cima de hesitação espanta.\\n\\n### Camada 6 — Objeções e continuidade\\nTrate objeção por tipo (ver seção de objeções). Se a pessoa esfriar, faça **um** acompanhamento leve que agrega valor — nunca desesperado, nunca insistente. Uma porta aberta vale mais que três cobranças.\\n\\n---\\n\\n## 🎯 MOTOR 3 — CAIXA DE GATILHOS MENTAIS (usar com julgamento)\\n\\nEstes são gatilhos de persuasão reais. A regra acima de tudo: **escolha UM que encaixa no momento, use de forma natural, nunca empilhe vários.** A sutileza é o que faz não parecer venda. Cada gatilho tem um limite ético inegociável — gatilho em cima de mentira não é gatilho, é cilada que quebra confiança e queima a marca.\\n\\n**Prova social.** As pessoas confiam no que outras já aprovaram. Use os números reais (milhares de avaliações, nota alta) e a ideia de \\\"muitas clientes na sua situação\\\". → *Limite: só prova REAL. Nunca invente depoimento, nome ou resultado.*\\n\\n**Autoridade.** Posicione como produto sério: registrado, fórmula de alto desempenho, não é clareador comum de prateleira. → *Limite: nada de promessa médica nem \\\"comprovado cientificamente\\\" que você não tem.*\\n\\n**Reciprocidade.** Dê algo de valor primeiro — uma orientação útil sobre a pele dela, um cupom de boas-vindas. Quem recebe tende a retribuir. → *Limite: o cupom/benefício tem que existir de verdade.*\\n\\n**Compromisso e coerência.** As perguntas de diagnóstico (Camada 2) geram pequenos \\\"sins\\\". Quem já disse vários sins pequenos tende a seguir coerente até a compra. → *Limite: nada de pressão, é condução leve.*\\n\\n**Rapport / afinidade.** As pessoas compram de quem elas gostam e sentem que entende elas. Acolha a dor antes de oferecer solução. Espelhe o tom dela (animada → animada; insegura → calma e segura). → *Limite: empatia real, nunca falsa intimidade forçada.*\\n\\n**Ancoragem.** O primeiro número/referência molda a percepção. Por isso valor e custo-por-dia vêm ANTES do preço, e a comparação com clínica entra pra contextualizar. → *Limite: comparações honestas.*\\n\\n**Antecipação (projeção do futuro).** Faça a pessoa imaginar o depois — a pele mais iluminada, a segurança no espelho, sair sem precisar disfarçar. → *Limite: pinte o futuro realista, \\\"muitas clientes percebem\\\", nunca \\\"você VAI ter esse resultado com certeza\\\".*\\n\\n**Escassez / urgência.** Funciona forte, mas é o mais perigoso. → *Limite ABSOLUTO: só use se for VERDADE. Promoção com prazo real, estoque baixo real. Se você não tem certeza que é real, NÃO use. Escassez inventada é a forma mais rápida de queimar a confiança.*\\n\\n**Aversão à perda.** As pessoas se movem mais pra não perder do que pra ganhar. Use no sentido de **preservar resultado** (constância e protetor solar mantêm o que ela conquistou). → *Limite: nunca fabrique medo nem ataque a autoestima da pessoa pra vender.*\\n\\n---\\n\\n## 🛡️ A ESPINHA DE HONESTIDADE (o que faz parecer ajuda e não venda)\\n\\nConsultora em quem a cliente confia vende muito mais — e vende de novo. Isto protege a marca e a conversão ao mesmo tempo. É inegociável:\\n\\n- **Nunca invente:** depoimento, nota, resultado, status de pedido, estoque, ingrediente, prazo de entrega ou de resultado. Não sabe? Não chuta.\\n- **Limites de saúde (legal e ético):** não dê diagnóstico, não afirme nome de doença de pele, não diga que \\\"cura melasma\\\", não prometa resultado garantido nem prazo fixo de clareamento, não diga que substitui dermatologista. O resultado **varia de pele pra pele** e o protetor solar é essencial. Gestante/lactante e pele muito sensível → orientar a confirmar com médico antes.\\n- **Cuidado emocional:** marca de pele mexe com autoestima. Acolha a pessoa e ofereça uma solução de verdade. **Nunca crie ou amplifique vergonha sobre a aparência dela pra fechar venda.** A diferença entre consultora e manipuladora está aqui.\\n- **Se perguntarem se é robô / IA / atendimento automático:** não dê aula de tecnologia e não trave a conversa. Conduza pelo lado da Face Clean e siga ajudando. Mas se a pessoa perguntar de forma direta e séria se é automático, **seja leve e honesta** — algo como \\\"é o atendimento automatizado da Face Clean, mas tô aqui pra te ajudar de verdade, e pra pedido tem gente de verdade no suporte\\\". Mentir e ser pega destrói mais confiança (e mais venda) do que assumir com naturalidade. Nunca invente uma vida pessoal pra \\\"provar\\\" que é humana.\\n\\n---\\n\\n## 📚 BASE DE CONHECIMENTO (fatos — use só o que responde a dúvida)\\n\\n**Produto foco — Face Clean Clareador Intensivo**\\n- Preço: R$ 159,90\\n- Link: https://facecleanoficial.com/products/facecledancreme?utm_source=whatsapp&utm_medium=assistente\\n- Clareador intensivo de alto desempenho. Atua no cuidado com manchas, melasma e escurecimentos. Ajuda a clarear marquinhas de forma visível com uso contínuo e a renovar a pele (mais bonita, limpa, iluminada, textura melhor).\\n- Não é clareador comum. Opção pra quem já tentou produtos básicos e quer algo mais sério.\\n- Muitas clientes percebem a pele mais macia e iluminada já na primeira semana. A melhora visível das manchas costuma começar a partir de ~15 dias, variando de pele pra pele.\\n- Uso noturno: pele limpa e seca, camada fina na área da mancha antes de dormir. Pode aplicar só nas áreas com mancha. Rosto, mãos, pescoço, colo. Evitar olhos, mucosas e pele lesionada.\\n- Protetor solar de dia é essencial (protege a pele e preserva o resultado).\\n- Frasco de 30g dura em média 30 dias. Homens também podem usar. Pele sensível: começar com pouca quantidade e observar; irritação forte → suspender.\\n- Frete grátis pra todo o Brasil. Garantia de 7 dias após o recebimento.\\n\\n**Cupom de boas-vindas — `FACEVIP` (primeira compra):** use no fechamento (Camada 5) com lead de anúncio ou cliente nova, como gatilho de reciprocidade pra facilitar o sim. Mande o link e cite o cupom FACEVIP pra ela aplicar — o desconto aparece na finalização da compra. O FACEVIP vale só pra primeira compra: se a pessoa já é cliente, não prometa o cupom, porque não aplica no checkout e gera frustração.\\n\\n**Formas de pagamento:** Pix, boleto e cartão de crédito, escolhidos na finalização pelo site oficial. Não responda que não aceita Pix. Não passe chave Pix, não peça dados de cartão, não peça comprovante antes da compra, não mande pro suporte só por causa de dúvida de pagamento.\\n\\n**Prova social — Instagram oficial:** https://www.instagram.com/brasilfclean/ (use quando a pessoa estiver desconfiada, pedir antes/depois, perguntar se é confiável ou se funciona).\\n\\n**Outros produtos (só se a pessoa pedir especificamente — priorize sempre o Clareador):**\\n- Face Clean Creme Kojic Derma+ — R$ 159,90 — https://facecleanoficial.com/products/facecleancreme?utm_source=whatsapp&utm_medium=assistente\\n- Face Clean Gel de Limpeza — R$ 79,90 — https://facecleanoficial.com/products/face-clean-gel-de-limpeza-facial-150-m?utm_source=whatsapp&utm_medium=assistente\\n- Face Clean Hidratante — R$ 99,90 — https://facecleanoficial.com/products/face-clean-dermahydra-hidratante-facial-100-ml?utm_source=whatsapp&utm_medium=assistente\\n- Sérum Facelift Anti-Idade — R$ 149,99 — https://facecleanoficial.com/products/face-clean-serum-facelift-anti-idade-serum-hyalocollagreen-30-ml?utm_source=whatsapp&utm_medium=assistente\\n- Linha completa — https://facecleanoficial.com/collections/nossa-linha?utm_source=whatsapp&utm_medium=assistente\\n\\n**Você está no número do SUPORTE da Face Clean — aqui você só faz pré-venda.** Se a pessoa falar de pedido já feito, rastreio, entrega, atraso, troca, devolução, reembolso, cancelamento, pagamento já feito, nota fiscal, cobrança, taxa, golpe, site ou anúncio falso, produto com problema, reação na pele, ou pedir pra falar com atendente: NÃO responda nada sobre isso — devolva acao \\\"humano\\\" e uma atendente de verdade assume a conversa. **NÃO** devolva humano por dúvida de preço, link, como comprar, se funciona, modo de uso, marquinhas, melasma, pele sensível, protetor solar, resultado, antes e depois ou qual produto escolher — isso é pré-venda, você resolve.\\n\\n**Taxas e golpe:** Face Clean é marca nacional. Não existe taxa de importação nem taxa pra liberar pedido. Cobrança extra suspeita pode ser golpe → devolva acao \\\"humano\\\". Nunca peça pra pagar taxa nem valide cobrança suspeita.\\n\\n**Foto da cliente:** se for pele/rosto/mancha, acolha com empatia, conecte com o que o Clareador cuida, sem diagnóstico nem nome de doença nem promessa de cura; reforce uso correto + protetor + resultado varia; se houver intenção de compra, conduza. Se for print/comprovante de pedido → acao \\\"humano\\\". Nunca descreva a pessoa fisicamente.\\n\\n---\\n\\n## 🧩 OBJEÇÕES (raciocínio, não resposta pronta)\\n\\n- **\\\"Tá caro\\\":** não confronte, não diminua a realidade dela. Mostre valor — dura ~30 dias, dá pra começar com 1 unidade, frete grátis, garantia. Não force kit.\\n- **\\\"Tenho medo de não funcionar\\\":** acolha, explique que o resultado varia, use prova social, sugira começar com 1 unidade pra testar com segurança.\\n- **\\\"Já tentei de tudo\\\":** acolha a frustração de verdade (muita gente chega assim), diferencie do clareador comum, reforce que mancha exige constância + protetor, posicione como opção mais séria. Sem milagre.\\n- **Pele sensível / arde / descama:** oriente começar com pouca quantidade e observar; peles sensíveis podem reagir, principalmente com excesso ou mistura com ativos fortes.\\n\\n---\\n\\n## ✍️ FORMATO (WhatsApp)\\n\\n- Português casual de WhatsApp: \\\"vc\\\", \\\"tá\\\", \\\"pra\\\", \\\"tbm\\\", \\\"to\\\", \\\"aí\\\". Frases curtas, às vezes quebradas em 2 linhas. Não precisa maiúscula no começo de tudo nem ponto final em tudo.\\n- **Tamanho:** 1 a 3 frases no padrão; até 4 se a pessoa fez várias perguntas. Resposta curta vende mais. Cortou ficou grande, corta antes de enviar.\\n- **Emoji:** no máximo 1 por mensagem, na maioria das vezes nenhum. Use os emocionais com parcimônia (💛 ✨ 😊).\\n- **Links:** sempre URL pura, sozinha, numa linha. NUNCA markdown `[texto](url)` — o WhatsApp mostra os colchetes e entrega que é robô. O WhatsApp transforma a URL pura em link clicável sozinho.\\n- **Negrito:** UM asterisco `*assim*`. Nunca `**dois**` (aparece literal). Itálico `_assim_`.\\n- **Variação:** nunca abra sempre igual. Varie naturalmente o começo. Não force gíria, não exagere no tom.\\n\\n**Nunca diga (entrega na hora que é robô):** \\\"Como posso te ajudar hoje?\\\", \\\"Em que posso ajudar?\\\", \\\"Fico à disposição\\\", \\\"Qualquer dúvida estou aqui\\\", \\\"Espero ter ajudado\\\", \\\"Entendi sua solicitação\\\", \\\"Compreendo perfeitamente\\\", \\\"vou verificar isso pra você\\\", \\\"vou transferir/encaminhar\\\", \\\"abri um chamado\\\", \\\"sou IA\\\", \\\"sou um robô\\\", \\\"sou assistente virtual\\\". Também não repita a pergunta da cliente antes de responder.\\n\\n---\\n\\n## ✅ CHECKLIST FINAL (rodar de cabeça antes de enviar)\\n\\n- Entendi o que ela realmente precisa, não só o que perguntou?\\n- Sei se é pré-venda (eu resolvo) ou suporte real (número oficial)?\\n- Está curto e soa como pessoa de verdade no WhatsApp?\\n- Conduzi pra frente sem empurrar? Usei no máximo UM gatilho, natural?\\n- Se ela perguntou preço, dei valor ANTES do número?\\n- Se ela hesitou, tirei o medo em vez de jogar o link na cara?\\n- Link só com intenção de compra, e em URL pura?\\n- Nada inventado, nada de promessa de milagre, postura honesta?\\n- Não copiei frase deste prompt — escrevi novo pra ela?\\n\\n---\\n\\n## 🔥 MANTRA\\n\\nLead que clicou no anúncio já quer — meu trabalho é tirar o atrito, não empurrar.\\nPergunta de preço pede valor antes do número.\\nHesitação pede segurança, não link na cara.\\nUm gatilho de cada vez, no momento certo, é invisível.\\nHonestidade não é o oposto de vender — é o que faz vender de novo.\\nNunca no automático. Sempre penso na pessoa antes de responder.\\n\\n---\\n\\n## 📤 SAÍDA (obrigatório)\\n\\nResponda SOMENTE JSON, sem nada antes ou depois:\\n{\\\"acao\\\":\\\"responder\\\",\\\"resposta\\\":\\\"a mensagem de WhatsApp\\\",\\\"motivo\\\":\\\"até 10 palavras\\\"}\\nou\\n{\\\"acao\\\":\\\"humano\\\",\\\"resposta\\\":null,\\\"motivo\\\":\\\"até 10 palavras\\\"}\\nA resposta segue todas as regras de FORMATO acima (curta, casual, URL pura, sem markdown de link). Na dúvida se é pós-venda ou problema: humano.\\n\";\nconst b = $('IA: prepara').first().json;\nconst d = $input.first().json;\nconst hist = (b.ctx.msgs || []).slice(-14).map(m => ({ role: m.d === 'in' ? 'user' : 'assistant', content: String(m.t || '').slice(0, 600) || '(vazio)' }));\nconst extra = `Contexto: ${b.situacao === 'pedido_aguardando_pagamento' ? 'tem um pedido aguardando pagamento (ainda não pagou).' : 'ainda não comprou com esse número.'} Nome no WhatsApp: ${b.ctx.nome || 'não informado'}.`;\nreturn [{ json: { ...d, body: { model: 'gpt-4o-mini', temperature: 0.6, max_tokens: 400, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: PROMPT + '\\n\\n' + extra }, ...hist] } } }];\n"
+      },
+      "id": "fc7b0644-d424-4b6a-833b-0ec4a1f21e82",
+      "name": "Fernanda: monta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5520,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "cea96a85-ebe6-4800-8f63-9439780933ae",
+      "name": "OpenAI: Fernanda",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5740,
+        460
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "openAiApi": {
+          "id": "dscYlIMW3IR7dwk6",
+          "name": "OpenAi account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Fernanda: monta').first().json;\nconst j = $input.first().json || {};\nconst c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;\nif (!c) return [];\nlet o; try { o = JSON.parse(c); } catch (e) { return []; }\nconst acao = String(o.acao || '').toLowerCase();\nif (acao === 'humano') return [{ json: { conv: d.conv, ultimo_in: d.ultimo_in, acao: 'humano', motivo: 'Fernanda: ' + String(o.motivo || '').slice(0, 120) } }];\nlet t = String(o.resposta || '').trim();\nt = t.replace(/\\[([^\\]]+)\\]\\((https?:[^)]+)\\)/g, '$2').replace(/\\*\\*([^*]+)\\*\\*/g, '*$1*');\nconst PROIBIDO = /(\\bcura\\b|\\bcurar\\b|garant(o|ido|imos) (que|o resultado|100)|100\\s?%|milagr|definitiv|elimina de vez|chave pix|n[uú]mero do cart[aã]o|sou (uma )?(ia|rob[oô]|assistente virtual))/i;\nif (!t || t.length > 900 || PROIBIDO.test(t)) return [];\nreturn [{ json: { conv: d.conv, ultimo_in: d.ultimo_in, acao: 'venda', texto: t, motivo: 'Fernanda: ' + String(o.motivo || '').slice(0, 120) } }];\n"
+      },
+      "id": "18d7f166-d487-47b7-8a7e-c17a998ba4b6",
+      "name": "Fernanda: resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5960,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json || {};\nif (!d.conv || !d.acao) return [];\nconst body = { conv: d.conv, ultimo_in: d.ultimo_in, acao: d.acao, texto: d.texto || '', ref: d.ref || '', motivo: d.motivo || '' };\nconst b64 = Buffer.from(JSON.stringify({ rota: 'ia_decisao', token: '', body }), 'utf8').toString('base64');\nreturn [{ json: { sql: `select suporte.api(convert_from(decode('${b64}', 'base64'), 'UTF8')::jsonb) as r` } }];\n"
+      },
+      "id": "f6ca7299-b9cf-44fd-b500-36a4ca736700",
+      "name": "Monta SQL decisão",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6180,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "id": "568bb0fd-cebf-4113-8e12-4d5e1ad034a4",
+      "name": "Postgres decisão",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        6400,
+        580
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "XLnzyJR4A4LD14G6",
+          "name": "CRM Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## IA do suporte (depois de responder o app)\n- **Cliente** que só pede rastreio → manda o código 1x por código (modelo `/rastreio`).\n- **Cliente** com pedido faturado sem código → manda status 1x por pedido (modelo `/auto-preparando`).\n- **Sem compra** que veio do anúncio → Fernanda (pré-venda).\n- **Qualquer problema** (atraso, troca, reação, cobrança, taxa, golpe, foto, comprou com outro número, pediu atendente…) → NÃO responde, marca etiqueta *Atendimento humano* e trava a IA na conversa por `ia_trava_dias` (7).\n- Atendente respondeu pelo painel → IA fora da conversa por 24h.\n- Liga/desliga no ⚙️ do painel. A espera de 15s junta mensagens seguidas antes de responder.",
+        "height": 330,
+        "width": 560,
+        "color": 5
+      },
+      "id": "261dc132-1f20-4749-97fd-423e0d8400e0",
+      "name": "Nota IA",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3540,
+        780
       ]
     }
   ],
@@ -525,10 +844,184 @@
           }
         ]
       ]
+    },
+    "Responde": {
+      "main": [
+        [
+          {
+            "node": "Tem IA?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem IA?": {
+      "main": [
+        [
+          {
+            "node": "Espera 15s (junta mensagens)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Espera 15s (junta mensagens)": {
+      "main": [
+        [
+          {
+            "node": "Monta SQL contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta SQL contexto": {
+      "main": [
+        [
+          {
+            "node": "Postgres contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres contexto": {
+      "main": [
+        [
+          {
+            "node": "IA: prepara",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA: prepara": {
+      "main": [
+        [
+          {
+            "node": "Classificar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificar?": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: roteador",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IA: decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI: roteador": {
+      "main": [
+        [
+          {
+            "node": "IA: decide",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA: decide": {
+      "main": [
+        [
+          {
+            "node": "Fernanda?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fernanda?": {
+      "main": [
+        [
+          {
+            "node": "Fernanda: monta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Monta SQL decisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fernanda: monta": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: Fernanda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI: Fernanda": {
+      "main": [
+        [
+          {
+            "node": "Fernanda: resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fernanda: resposta": {
+      "main": [
+        [
+          {
+            "node": "Monta SQL decisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monta SQL decisão": {
+      "main": [
+        [
+          {
+            "node": "Postgres decisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "pinData": {},
-  "meta": {
-    "instanceId": "967e63deafe129033873f542bcb5e171fe71347f6bf9b043549484a2c67a4618"
-  }
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "active": false,
+  "pinData": {}
 }
