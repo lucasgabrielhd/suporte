@@ -709,6 +709,7 @@ begin
   if r = 'limpar' then return suporte.r_limpar(); end if;
   if r = 'ia_contexto' then return suporte.ia_contexto(coalesce(p->'body', '{}'::jsonb)); end if;
   if r = 'ia_decisao' then return suporte.ia_decisao(coalesce(p->'body', '{}'::jsonb)); end if;
+  if r = 'aviso' then return suporte.aviso_registrar(coalesce(p->'body', '{}'::jsonb)); end if;
   if r = 'rastreio_salvar' then
     insert into suporte.rastreio_cache (codigo, dados, atualizado_em)
     values (p->'body'->>'codigo', coalesce(p->'body'->'dados', '{}'::jsonb), now())
@@ -747,6 +748,33 @@ on conflict (atalho) do nothing;
 insert into suporte.respostas (atalho, texto, ordem)
 values ('auto-recompra', E'Oi, {nome}! Que bom te ver de novo por aqui 💙\n\nPra comprar é rapidinho:\n1️⃣ Clica no link abaixo (o cupom *BLACK* já vai aplicado, 20% OFF)\n2️⃣ Confere seus dados e o endereço de entrega\n3️⃣ Escolhe Pix, cartão em até 12x ou boleto e finaliza\n\n👉 https://seguro.facecleanoficial.com/r/TTHQ1FXD32?promocode=BLACK\n\nFrete grátis pra todo o Brasil 🚚\nSe quiser levar 2 ou um kit, me fala aqui que te mando o link certinho 😊\n\nEquipe Face Clean 🌿', 36)
 on conflict (atalho) do nothing;
+
+create table if not exists suporte.avisos_pedido (
+  yampi_order_id bigint not null,
+  numero text not null default '',
+  tipo text not null,
+  canal text not null default 'whatsapp',
+  rastreio text,
+  em timestamptz not null default now(),
+  primary key (yampi_order_id, tipo)
+);
+create index if not exists avisos_pedido_numero_idx on suporte.avisos_pedido (numero);
+
+insert into suporte.config (chave, valor) values ('avisos_desde', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SSOF'))
+on conflict (chave) do nothing;
+
+create or replace function suporte.aviso_registrar(b jsonb) returns jsonb
+language plpgsql as $fn$
+begin
+  if coalesce(b->>'order_id', '') !~ '^\d+$' or coalesce(b->>'tipo', '') not in ('aprovado', 'enviado') then
+    return jsonb_build_object('ok', false, 'erro', 'dados_invalidos');
+  end if;
+  insert into suporte.avisos_pedido (yampi_order_id, numero, tipo, canal, rastreio)
+  values ((b->>'order_id')::bigint, coalesce(b->>'numero', ''), b->>'tipo', coalesce(nullif(b->>'canal', ''), 'whatsapp'), nullif(b->>'rastreio', ''))
+  on conflict (yampi_order_id, tipo) do update set em = now(), rastreio = coalesce(excluded.rastreio, suporte.avisos_pedido.rastreio);
+  return jsonb_build_object('ok', true);
+end
+$fn$;
 
 create or replace function suporte.ia_elegivel(p_conv text) returns boolean
 language sql stable as $fn$
@@ -790,6 +818,7 @@ declare
   v_conv text := coalesce(b->>'conv', '');
   v_ult bigint := case when coalesce(b->>'ultimo_in', '') ~ '^\d+$' then (b->>'ultimo_in')::bigint end;
   v_c record;
+  v_cli jsonb;
 begin
   select * into v_c from suporte.conversas where conv = v_conv;
   if not found or v_ult is null then return jsonb_build_object('ok', true, 'ctx', null, 'motivo', 'sem_conversa'); end if;
@@ -801,10 +830,14 @@ begin
               and criado_em > (select criado_em from suporte.mensagens where id = v_ult)) then
     return jsonb_build_object('ok', true, 'ctx', null, 'motivo', 'ja_respondida');
   end if;
+  v_cli := suporte.cliente_crm(v_c.numero);
   return jsonb_build_object('ok', true, 'ctx', jsonb_build_object(
     'conv', v_c.conv, 'numero', v_c.numero, 'nome', coalesce(v_c.nome_crm, v_c.nome), 'ultimo_in', v_ult::text,
     'crm', suporte.crm_resumo(v_c.numero),
-    'cliente', suporte.cliente_crm(v_c.numero),
+    'cliente', v_cli,
+    'avisos', (select coalesce(jsonb_agg(a.tipo || ':' || a.numero), '[]'::jsonb) from suporte.avisos_pedido a
+                where a.numero in (select x->>'numero' from jsonb_array_elements(coalesce(v_cli->'ultimos_pedidos', '[]'::jsonb)) x)),
+    'avisos_desde', (select valor from suporte.config where chave = 'avisos_desde'),
     'msgs', (select coalesce(jsonb_agg(x order by (x->>'id')::bigint), '[]'::jsonb) from (
                select jsonb_build_object('id', m.id, 'd', m.direcao, 'autor', m.autor, 'em', m.criado_em,
                         't', left(case when m.tipo = 'audio' then '[áudio] ' || coalesce(m.transcricao, '')
